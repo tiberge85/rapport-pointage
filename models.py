@@ -102,12 +102,27 @@ def init_db():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
+        
+        CREATE TABLE IF NOT EXISTS contracts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id INTEGER NOT NULL,
+            reference TEXT,
+            start_date TEXT,
+            end_date TEXT,
+            monthly_rate REAL DEFAULT 0,
+            description TEXT,
+            status TEXT DEFAULT 'actif',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            created_by INTEGER,
+            FOREIGN KEY (client_id) REFERENCES clients(id),
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        );
     ''')
     
     # Permissions par défaut — ajouter 'logs' pour admin
     default_perms = {
-        'admin': ['traitement', 'fichiers', 'clients', 'admin', 'dashboard', 'envoyer', 'logs'],
-        'rh': ['fichiers', 'clients', 'dashboard', 'envoyer'],
+        'admin': ['traitement', 'fichiers', 'clients', 'admin', 'dashboard', 'envoyer', 'logs', 'contrats'],
+        'rh': ['fichiers', 'clients', 'dashboard', 'envoyer', 'contrats'],
         'technicien': ['traitement', 'dashboard'],
     }
     for role, perms in default_perms.items():
@@ -476,3 +491,88 @@ def get_job_by_id(job_id):
 
 def get_db_path():
     return DB_PATH
+
+
+# ======================== CONTRACTS ========================
+
+def create_contract(client_id, reference='', start_date='', end_date='', monthly_rate=0, description='', created_by=None):
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO contracts (client_id, reference, start_date, end_date, monthly_rate, description, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (client_id, reference, start_date, end_date, monthly_rate, description, created_by))
+    conn.commit()
+    conn.close()
+
+def get_client_contracts(client_id):
+    conn = get_db()
+    contracts = conn.execute("""
+        SELECT c.*, cl.name as client_name FROM contracts c
+        LEFT JOIN clients cl ON c.client_id = cl.id
+        WHERE c.client_id = ? ORDER BY c.created_at DESC
+    """, (client_id,)).fetchall()
+    conn.close()
+    return [dict(c) for c in contracts]
+
+def get_all_contracts():
+    conn = get_db()
+    contracts = conn.execute("""
+        SELECT c.*, cl.name as client_name FROM contracts c
+        LEFT JOIN clients cl ON c.client_id = cl.id
+        ORDER BY c.status, c.end_date
+    """).fetchall()
+    conn.close()
+    return [dict(c) for c in contracts]
+
+def get_contract_by_id(contract_id):
+    conn = get_db()
+    c = conn.execute("SELECT * FROM contracts WHERE id = ?", (contract_id,)).fetchone()
+    conn.close()
+    return dict(c) if c else None
+
+def update_contract(contract_id, **kwargs):
+    conn = get_db()
+    for key, val in kwargs.items():
+        if key in ('reference', 'start_date', 'end_date', 'monthly_rate', 'description', 'status', 'client_id'):
+            conn.execute(f"UPDATE contracts SET {key}=? WHERE id=?", (val, contract_id))
+    conn.commit()
+    conn.close()
+
+def delete_contract(contract_id):
+    conn = get_db()
+    conn.execute("DELETE FROM contracts WHERE id = ?", (contract_id,))
+    conn.commit()
+    conn.close()
+
+
+# ======================== COMPARISON STATS ========================
+
+def get_client_monthly_stats():
+    """Retourne les stats par client et par mois pour comparaison."""
+    conn = get_db()
+    jobs = conn.execute("""
+        SELECT job_id, client_name, employee_count, period, hp, status, created_at
+        FROM jobs ORDER BY created_at
+    """).fetchall()
+    conn.close()
+    
+    stats = {}
+    for j in jobs:
+        j = dict(j)
+        client = j['client_name'] or 'Inconnu'
+        # Extract month from created_at
+        month = j['created_at'][:7] if j['created_at'] else 'N/A'
+        
+        if client not in stats:
+            stats[client] = {}
+        if month not in stats[client]:
+            stats[client][month] = {'count': 0, 'employees': 0, 'sent': 0, 'pending': 0}
+        
+        stats[client][month]['count'] += 1
+        stats[client][month]['employees'] += j['employee_count'] or 0
+        if j['status'] == 'envoye':
+            stats[client][month]['sent'] += 1
+        else:
+            stats[client][month]['pending'] += 1
+    
+    return stats

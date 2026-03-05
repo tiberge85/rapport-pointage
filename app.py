@@ -6,8 +6,12 @@ Application Web v3 — Gestion des Rapports de Pointage
 Auth + Rôles + Dashboard + Clients + Fichiers RH
 """
 
-import os, uuid, shutil, functools
+import os, uuid, shutil, functools, smtplib, json
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -27,7 +31,10 @@ from models import (init_db, create_user, authenticate_user, get_user_by_id,
                     reset_jobs, reset_clients, reset_users, reset_all,
                     log_activity, get_activity_logs,
                     add_job_comment, get_job_comments, update_job_notes,
-                    get_job_by_id, get_db_path)
+                    get_job_by_id, get_db_path,
+                    create_contract, get_client_contracts, get_all_contracts,
+                    get_contract_by_id, update_contract, delete_contract,
+                    get_client_monthly_stats)
 
 app = Flask(__name__, template_folder=BASE_DIR, static_folder=BASE_DIR, static_url_path='/static')
 app.secret_key = os.environ.get('SECRET_KEY', 'ramya-tech-2026-secret-v3')
@@ -41,7 +48,7 @@ os.makedirs(app.config['FILES_FOLDER'], exist_ok=True)
 init_db()
 
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
-ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'admin', 'dashboard', 'envoyer', 'logs']
+ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'admin', 'dashboard', 'envoyer', 'logs', 'contrats']
 
 def allowed_file(fn):
     return '.' in fn and fn.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -609,6 +616,297 @@ def pwa_manifest():
 @app.route('/sw.js')
 def service_worker():
     return app.send_static_file('sw.js') if os.path.exists(os.path.join(BASE_DIR, 'sw.js')) else ('', 204)
+
+
+# ======================== CONTRATS ========================
+
+@app.route('/contrats')
+@permission_required('contrats')
+def contrats_page():
+    contracts = get_all_contracts()
+    clients = get_all_clients()
+    return render_template('contrats.html', page='contrats', contracts=contracts, clients=clients)
+
+@app.route('/contrats/add', methods=['POST'])
+@permission_required('contrats')
+def contrats_add():
+    create_contract(
+        int(request.form['client_id']),
+        request.form.get('reference', ''),
+        request.form.get('start_date', ''),
+        request.form.get('end_date', ''),
+        float(request.form.get('monthly_rate', 0) or 0),
+        request.form.get('description', ''),
+        session['user_id']
+    )
+    user = get_user_by_id(session['user_id'])
+    log_activity(session['user_id'], user['full_name'] if user else '?',
+                'Contrat', 'Nouveau contrat ajouté', request.remote_addr)
+    flash("Contrat ajouté", "success")
+    return redirect(url_for('contrats_page'))
+
+@app.route('/contrats/edit/<int:cid>', methods=['GET', 'POST'])
+@permission_required('contrats')
+def contrats_edit(cid):
+    contract = get_contract_by_id(cid)
+    if not contract:
+        flash("Contrat non trouvé", "error")
+        return redirect(url_for('contrats_page'))
+    if request.method == 'POST':
+        update_contract(cid,
+            client_id=int(request.form['client_id']),
+            reference=request.form.get('reference', ''),
+            start_date=request.form.get('start_date', ''),
+            end_date=request.form.get('end_date', ''),
+            monthly_rate=float(request.form.get('monthly_rate', 0) or 0),
+            description=request.form.get('description', ''),
+            status=request.form.get('status', 'actif'))
+        flash("Contrat modifié", "success")
+        return redirect(url_for('contrats_page'))
+    clients = get_all_clients()
+    return render_template('edit_contract.html', page='contrats', contract=contract, clients=clients)
+
+@app.route('/contrats/delete/<int:cid>')
+@permission_required('contrats')
+def contrats_delete(cid):
+    delete_contract(cid)
+    flash("Contrat supprimé", "success")
+    return redirect(url_for('contrats_page'))
+
+
+# ======================== COMPARAISON MENSUELLE ========================
+
+@app.route('/comparaison')
+@login_required
+def comparaison_page():
+    stats = get_client_monthly_stats()
+    # Collect all months
+    all_months = set()
+    for client_data in stats.values():
+        all_months.update(client_data.keys())
+    months = sorted(all_months)
+    return render_template('comparaison.html', page='comparaison', stats=stats, months=months)
+
+
+# ======================== ALERTES ========================
+
+@app.route('/alertes')
+@login_required
+def alertes_page():
+    # Analyser les derniers rapports pour trouver les alertes
+    jobs = get_all_jobs()
+    alerts = []
+    
+    for job in jobs:
+        if not job.get('job_id'):
+            continue
+        # Charger les données du rapport
+        files_dir = os.path.join(app.config['FILES_FOLDER'], job['job_id'])
+        xlsx_path = None
+        if os.path.isdir(files_dir):
+            for f in os.listdir(files_dir):
+                if f.endswith('.xlsx'):
+                    xlsx_path = os.path.join(files_dir, f)
+                    break
+        
+        if not xlsx_path or not os.path.exists(xlsx_path):
+            continue
+        
+        try:
+            emps, _ = extract_from_excel(xlsx_path)
+            from rapport_core import calc_employee_stats
+            for emp in emps:
+                enriched, stats = calc_employee_stats(emp)
+                # Alertes retards excessifs (>5 jours)
+                if stats['days_late'] >= 5:
+                    alerts.append({
+                        'type': 'retard',
+                        'severity': 'high' if stats['days_late'] >= 10 else 'medium',
+                        'employee': emp['name'],
+                        'client': job['client_name'],
+                        'detail': f"{stats['days_late']} jours de retard",
+                        'period': job.get('period', ''),
+                        'job_id': job['job_id']
+                    })
+                # Alertes absences (>3 jours)
+                if stats['days_absent'] >= 3:
+                    alerts.append({
+                        'type': 'absence',
+                        'severity': 'high' if stats['days_absent'] >= 5 else 'medium',
+                        'employee': emp['name'],
+                        'client': job['client_name'],
+                        'detail': f"{stats['days_absent']} jours d'absence",
+                        'period': job.get('period', ''),
+                        'job_id': job['job_id']
+                    })
+        except:
+            continue
+    
+    # Trier: high en premier
+    alerts.sort(key=lambda a: (0 if a['severity'] == 'high' else 1, a['client']))
+    return render_template('alertes.html', page='alertes', alerts=alerts)
+
+
+# ======================== ENVOI EMAIL ========================
+
+@app.route('/fichiers/email/<job_id>', methods=['GET', 'POST'])
+@permission_required('envoyer')
+def fichiers_email(job_id):
+    job = get_job_by_id(job_id)
+    if not job:
+        flash("Rapport non trouvé", "error")
+        return redirect(url_for('fichiers'))
+    
+    # Pré-remplir avec les infos client
+    client = get_client_by_id(job['client_id']) if job.get('client_id') else None
+    default_email = client['email'] if client and client.get('email') else ''
+    
+    if request.method == 'POST':
+        to_email = request.form.get('to_email', '').strip()
+        subject = request.form.get('subject', '').strip()
+        body = request.form.get('body', '').strip()
+        smtp_host = request.form.get('smtp_host', '').strip()
+        smtp_port = int(request.form.get('smtp_port', 587))
+        smtp_user = request.form.get('smtp_user', '').strip()
+        smtp_pass = request.form.get('smtp_pass', '').strip()
+        
+        if not all([to_email, subject, smtp_host, smtp_user, smtp_pass]):
+            flash("Tous les champs SMTP sont obligatoires", "error")
+            return render_template('email_send.html', page='fichiers', job=job,
+                                 default_email=default_email)
+        
+        # Préparer le fichier PDF
+        files_dir = os.path.join(app.config['FILES_FOLDER'], secure_filename(job_id))
+        pdf_path = None
+        if os.path.isdir(files_dir):
+            for f in os.listdir(files_dir):
+                if f.endswith('.pdf'):
+                    pdf_path = os.path.join(files_dir, f)
+                    break
+        
+        if not pdf_path:
+            flash("Fichier PDF non trouvé", "error")
+            return redirect(url_for('fichiers'))
+        
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = smtp_user
+            msg['To'] = to_email
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain', 'utf-8'))
+            
+            # Joindre le PDF
+            with open(pdf_path, 'rb') as f:
+                part = MIMEBase('application', 'pdf')
+                part.set_payload(f.read())
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', f'attachment; filename="{os.path.basename(pdf_path)}"')
+                msg.attach(part)
+            
+            server = smtplib.SMTP(smtp_host, smtp_port)
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+            server.quit()
+            
+            # Marquer comme envoyé
+            mark_job_sent(job_id, session['user_id'])
+            user = get_user_by_id(session['user_id'])
+            log_activity(session['user_id'], user['full_name'] if user else '?',
+                        'Email', f"Rapport envoyé par email à {to_email}", request.remote_addr)
+            
+            flash(f"Email envoyé avec succès à {to_email}", "success")
+            return redirect(url_for('fichiers'))
+        
+        except Exception as e:
+            flash(f"Erreur d'envoi : {str(e)}", "error")
+    
+    return render_template('email_send.html', page='fichiers', job=job, default_email=default_email)
+
+
+# ======================== LANGUE ========================
+
+@app.route('/lang/<lang>')
+def set_language(lang):
+    if lang in ('fr', 'en'):
+        session['lang'] = lang
+    return redirect(request.referrer or url_for('dashboard'))
+
+
+# ======================== EXPORT STATS ========================
+
+@app.route('/export/stats')
+@permission_required('admin')
+def export_stats():
+    """Exporte les statistiques en PDF avec graphiques."""
+    from rapport_core import _generate_chart_image
+    
+    stats = get_dashboard_stats()
+    monthly = get_client_monthly_stats()
+    
+    # Générer un rapport simple avec reportlab
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.colors import HexColor
+    
+    export_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'export')
+    os.makedirs(export_dir, exist_ok=True)
+    output = os.path.join(export_dir, 'statistiques_ramya.pdf')
+    
+    doc = SimpleDocTemplate(output, pagesize=A4)
+    story = []
+    
+    title_style = ParagraphStyle('title', fontSize=18, alignment=TA_CENTER,
+                                  textColor=HexColor('#1a7a6d'), spaceAfter=20)
+    h2_style = ParagraphStyle('h2', fontSize=14, textColor=HexColor('#1a7a6d'),
+                               spaceAfter=10, spaceBefore=20)
+    normal = ParagraphStyle('normal', fontSize=11, spaceAfter=6)
+    
+    story.append(Paragraph("RAMYA TECHNOLOGIE & INNOVATION", title_style))
+    story.append(Paragraph("Rapport Statistique", title_style))
+    story.append(Spacer(1, 10*mm))
+    
+    story.append(Paragraph("Vue d'ensemble", h2_style))
+    story.append(Paragraph(f"Rapports traités : {stats['total_jobs']}", normal))
+    story.append(Paragraph(f"En attente d'envoi : {stats['pending_jobs']}", normal))
+    story.append(Paragraph(f"Envoyés : {stats['sent_jobs']}", normal))
+    story.append(Paragraph(f"Clients : {stats['total_clients']}", normal))
+    story.append(Paragraph(f"Utilisateurs : {stats['total_users']}", normal))
+    
+    if monthly:
+        story.append(Paragraph("Détail par client et par mois", h2_style))
+        for client, months in monthly.items():
+            story.append(Paragraph(f"<b>{client}</b>", normal))
+            data = [['Mois', 'Rapports', 'Employés', 'Envoyés', 'En attente']]
+            for month, m_stats in sorted(months.items()):
+                data.append([month, m_stats['count'], m_stats['employees'],
+                           m_stats['sent'], m_stats['pending']])
+            t = Table(data, colWidths=[35*mm, 25*mm, 25*mm, 25*mm, 25*mm])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), HexColor('#1a7a6d')),
+                ('TEXTCOLOR', (0,0), (-1,0), HexColor('#ffffff')),
+                ('FONTSIZE', (0,0), (-1,-1), 9),
+                ('GRID', (0,0), (-1,-1), 0.5, HexColor('#cccccc')),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ]))
+            story.append(t)
+            story.append(Spacer(1, 5*mm))
+    
+    story.append(Spacer(1, 10*mm))
+    story.append(Paragraph(f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}", normal))
+    
+    doc.build(story)
+    
+    user = get_user_by_id(session['user_id'])
+    log_activity(session['user_id'], user['full_name'] if user else '?',
+                'Export', 'Export statistiques PDF', request.remote_addr)
+    
+    return send_file(output, as_attachment=True,
+                    download_name=f"stats_ramya_{datetime.now().strftime('%Y%m')}.pdf")
 
 
 # ======================== UTILS ========================

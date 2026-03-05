@@ -40,6 +40,7 @@
                         {% endif %}
                         {% if 'envoyer' in permissions %}
                         <a href="/fichiers/marquer/{{ job.job_id }}" class="btn btn-orange btn-sm" onclick="return confirm('Marquer comme envoyé ?')">✅ Envoyé</a>
+                        <a href="/fichiers/email/{{ job.job_id }}" class="btn btn-sm" style="background:#42a5f5;color:#fff">📧 Email</a>
                         {% endif %}
                     </td>
                 </tr>

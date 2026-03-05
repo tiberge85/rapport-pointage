@@ -164,9 +164,14 @@
                 {% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}
             </a>
             {% endif %}
+            <a href="/alertes" class="{% if page == 'alertes' %}active{% endif %}">🚨 Alertes</a>
+            <a href="/comparaison" class="{% if page == 'comparaison' %}active{% endif %}">📈 Comparaison</a>
             {% if 'clients' in permissions %}
             <div class="separator"></div>
             <a href="/clients" class="{% if page == 'clients' %}active{% endif %}">🏢 Clients</a>
+            {% endif %}
+            {% if 'contrats' in permissions %}
+            <a href="/contrats" class="{% if page == 'contrats' %}active{% endif %}">📑 Contrats</a>
             {% endif %}
             {% if 'admin' in permissions %}
             <div class="separator"></div>
@@ -176,10 +181,16 @@
             <a href="/logs" class="{% if page == 'logs' %}active{% endif %}">📋 Logs d'activité</a>
             {% endif %}
             {% if 'admin' in permissions %}
-            <a href="/admin/backup" class="{% if page == 'backup' %}active{% endif %}">💾 Sauvegarde BDD</a>
+            <a href="/admin/backup">💾 Sauvegarde BDD</a>
+            <a href="/export/stats">📊 Export statistiques</a>
             {% endif %}
         </div>
         <div class="sidebar-footer">
+            <div style="margin-bottom:8px">
+                <a href="/lang/fr" style="{% if session.get('lang','fr')=='fr' %}color:#fff;font-weight:700{% endif %}">FR</a>
+                <span style="opacity:0.3"> | </span>
+                <a href="/lang/en" style="{% if session.get('lang')=='en' %}color:#fff;font-weight:700{% endif %}">EN</a>
+            </div>
             <a href="/logout">🚪 Déconnexion</a>
         </div>
     </nav>
