@@ -617,12 +617,12 @@ def admin_backup():
 @app.route('/manifest.json')
 def pwa_manifest():
     manifest = {
-        "name": "RAMYA Rapport de Pointage",
-        "short_name": "RAMYA",
+        "name": "WannyGest",
+        "short_name": "WannyGest",
         "start_url": "/dashboard",
         "display": "standalone",
-        "background_color": "#0d3b36",
-        "theme_color": "#1a7a6d",
+        "background_color": "#0d2137",
+        "theme_color": "#1a3a5c",
         "icons": [
             {"src": "/static/logo_wannygest.png", "sizes": "192x192", "type": "image/png"},
             {"src": "/static/logo_wannygest.png", "sizes": "512x512", "type": "image/png"}
@@ -972,8 +972,8 @@ def export_stats():
     story = []
     
     title_style = ParagraphStyle('title', fontSize=18, alignment=TA_CENTER,
-                                  textColor=HexColor('#1a7a6d'), spaceAfter=20)
-    h2_style = ParagraphStyle('h2', fontSize=14, textColor=HexColor('#1a7a6d'),
+                                  textColor=HexColor('#1a3a5c'), spaceAfter=20)
+    h2_style = ParagraphStyle('h2', fontSize=14, textColor=HexColor('#1a3a5c'),
                                spaceAfter=10, spaceBefore=20)
     normal = ParagraphStyle('normal', fontSize=11, spaceAfter=6)
     
@@ -998,7 +998,7 @@ def export_stats():
                            m_stats['sent'], m_stats['pending']])
             t = Table(data, colWidths=[35*mm, 25*mm, 25*mm, 25*mm, 25*mm])
             t.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), HexColor('#1a7a6d')),
+                ('BACKGROUND', (0,0), (-1,0), HexColor('#1a3a5c')),
                 ('TEXTCOLOR', (0,0), (-1,0), HexColor('#ffffff')),
                 ('FONTSIZE', (0,0), (-1,-1), 9),
                 ('GRID', (0,0), (-1,-1), 0.5, HexColor('#cccccc')),
