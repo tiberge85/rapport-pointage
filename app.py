@@ -55,12 +55,19 @@ os.makedirs(app.config['FILES_FOLDER'], exist_ok=True)
 
 init_db()
 
-# Init HR tables
+# Init extra tables
 from models import (init_rh_tables, get_all_employees, get_employee_by_id,
                     create_employee, update_employee, get_employee_stats,
                     get_leaves, create_leave, update_leave_status,
-                    get_payslips, create_payslip, update_payslip)
+                    get_payslips, create_payslip, update_payslip,
+                    init_extra_tables, record_login_attempt, get_failed_attempts,
+                    save_otp, verify_otp, db_count, db_sum, db_get_all)
 init_rh_tables()
+init_extra_tables()
+
+# Register module routes
+from modules_routes import modules_bp
+app.register_blueprint(modules_bp)
 
 from models import (init_devis_tables, create_devis, get_all_devis, get_devis_by_id,
                     update_devis_status, get_devis_stats, get_next_devis_ref)
@@ -119,17 +126,48 @@ def welcome():
         return redirect(url_for('dashboard'))
     return render_template('welcome.html')
 
+@app.before_request
+def check_session_timeout():
+    """Déconnexion automatique après 30 min d'inactivité."""
+    if 'user_id' in session:
+        last = session.get('last_active')
+        if last:
+            from datetime import datetime, timedelta
+            try:
+                last_dt = datetime.fromisoformat(last)
+                if datetime.now() - last_dt > timedelta(minutes=30):
+                    session.clear()
+                    flash("Session expirée — veuillez vous reconnecter", "info")
+                    return redirect(url_for('login'))
+            except:
+                pass
+        session['last_active'] = datetime.now().isoformat()
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        user = authenticate_user(request.form['username'], request.form['password'])
+        username = request.form['username']
+        ip = request.remote_addr
+        
+        # Vérifier verrouillage (5 tentatives en 15 min)
+        if get_failed_attempts(username) >= 5:
+            flash("Compte temporairement verrouillé (trop de tentatives). Réessayez dans 15 minutes.", "error")
+            return render_template('login.html')
+        
+        user = authenticate_user(username, request.form['password'])
         if user:
+            # Vérifier politique mot de passe
+            record_login_attempt(username, True, ip)
             session['user_id'] = user['id']
+            session['last_active'] = datetime.now().isoformat()
             log_activity(user['id'], user['full_name'], 'Connexion', 
-                        f"Connexion réussie", request.remote_addr)
+                        f"Connexion réussie", ip)
             flash(f"Bienvenue {user['full_name']} !", "success")
             return redirect(url_for('dashboard'))
-        flash("Identifiants incorrects", "error")
+        
+        record_login_attempt(username, False, ip)
+        remaining = 5 - get_failed_attempts(username)
+        flash(f"Identifiants incorrects ({remaining} tentative(s) restante(s))", "error")
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])

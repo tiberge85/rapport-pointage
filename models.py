@@ -1076,3 +1076,196 @@ def get_devis_stats():
     s['montant_total'] = conn.execute("SELECT COALESCE(SUM(total_ttc),0) FROM devis WHERE status='accepte'").fetchone()[0]
     conn.close()
     return s
+
+
+# ======================== SECURITY ========================
+
+def record_login_attempt(username, success, ip=''):
+    conn = get_db()
+    conn.execute("CREATE TABLE IF NOT EXISTS login_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, success INTEGER, ip TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+    conn.execute("INSERT INTO login_attempts (username, success, ip) VALUES (?,?,?)", (username, 1 if success else 0, ip))
+    conn.commit()
+    conn.close()
+
+def get_failed_attempts(username, minutes=15):
+    conn = get_db()
+    conn.execute("CREATE TABLE IF NOT EXISTS login_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, success INTEGER, ip TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+    count = conn.execute("SELECT COUNT(*) FROM login_attempts WHERE username=? AND success=0 AND created_at > datetime('now', ?)", (username, f'-{minutes} minutes')).fetchone()[0]
+    conn.close()
+    return count
+
+def save_otp(user_id, code):
+    conn = get_db()
+    conn.execute("CREATE TABLE IF NOT EXISTS otp_codes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, code TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+    conn.execute("DELETE FROM otp_codes WHERE user_id=?", (user_id,))
+    conn.execute("INSERT INTO otp_codes (user_id, code) VALUES (?,?)", (user_id, code))
+    conn.commit()
+    conn.close()
+
+def verify_otp(user_id, code):
+    conn = get_db()
+    conn.execute("CREATE TABLE IF NOT EXISTS otp_codes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, code TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+    row = conn.execute("SELECT * FROM otp_codes WHERE user_id=? AND code=? AND created_at > datetime('now', '-10 minutes')", (user_id, code)).fetchone()
+    if row:
+        conn.execute("DELETE FROM otp_codes WHERE user_id=?", (user_id,))
+        conn.commit()
+    conn.close()
+    return row is not None
+
+
+# ======================== PROJECTS ========================
+
+def init_extra_tables():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, client_id INTEGER, description TEXT,
+            status TEXT DEFAULT 'non_commence', priority TEXT DEFAULT 'moyenne',
+            start_date TEXT, end_date TEXT, budget REAL DEFAULT 0,
+            manager_id INTEGER, created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (client_id) REFERENCES clients(id)
+        );
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER, title TEXT NOT NULL, description TEXT,
+            assigned_to INTEGER, priority TEXT DEFAULT 'moyenne',
+            status TEXT DEFAULT 'a_faire', due_date TEXT,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (project_id) REFERENCES projects(id),
+            FOREIGN KEY (assigned_to) REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS prospects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company TEXT NOT NULL, contact_name TEXT, tel TEXT, email TEXT,
+            source TEXT, status TEXT DEFAULT 'nouveau',
+            estimated_value REAL DEFAULT 0, notes TEXT,
+            assigned_to INTEGER, created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS stock_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, reference TEXT, category TEXT,
+            quantity INTEGER DEFAULT 0, unit_price REAL DEFAULT 0,
+            min_stock INTEGER DEFAULT 0, location TEXT,
+            notes TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS stock_movements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL, movement_type TEXT NOT NULL,
+            quantity INTEGER NOT NULL, unit_price REAL DEFAULT 0,
+            reference TEXT, notes TEXT, created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (item_id) REFERENCES stock_items(id)
+        );
+        CREATE TABLE IF NOT EXISTS treasury (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            movement_type TEXT NOT NULL, category TEXT,
+            amount REAL NOT NULL, description TEXT,
+            reference TEXT, payment_method TEXT,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL, description TEXT,
+            start_date TEXT, end_date TEXT,
+            all_day INTEGER DEFAULT 0, color TEXT DEFAULT '#1a3a5c',
+            user_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subject TEXT NOT NULL, description TEXT,
+            client_id INTEGER, priority TEXT DEFAULT 'normale',
+            status TEXT DEFAULT 'ouvert', assigned_to INTEGER,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (client_id) REFERENCES clients(id)
+        );
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            category TEXT, amount REAL NOT NULL,
+            description TEXT, date TEXT, receipt_ref TEXT,
+            status TEXT DEFAULT 'en_attente',
+            approved_by INTEGER, created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS user_todos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL, title TEXT NOT NULL,
+            done INTEGER DEFAULT 0, priority TEXT DEFAULT 'normale',
+            due_date TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+    ''')
+    conn.commit()
+    conn.close()
+
+
+# ======================== GENERIC CRUD HELPERS ========================
+
+def db_insert(table, **kwargs):
+    conn = get_db()
+    cols = ', '.join(kwargs.keys())
+    vals = ', '.join(['?' for _ in kwargs])
+    conn.execute(f"INSERT INTO {table} ({cols}) VALUES ({vals})", list(kwargs.values()))
+    conn.commit()
+    rid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.close()
+    return rid
+
+def db_get_all(table, where=None, order='created_at DESC', limit=200):
+    conn = get_db()
+    q = f"SELECT * FROM {table}"
+    params = []
+    if where:
+        conditions = ' AND '.join([f"{k}=?" for k in where.keys()])
+        q += f" WHERE {conditions}"
+        params = list(where.values())
+    q += f" ORDER BY {order} LIMIT {limit}"
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def db_get_by_id(table, rid):
+    conn = get_db()
+    row = conn.execute(f"SELECT * FROM {table} WHERE id=?", (rid,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def db_update(table, rid, **kwargs):
+    conn = get_db()
+    sets = ', '.join([f"{k}=?" for k in kwargs.keys()])
+    conn.execute(f"UPDATE {table} SET {sets} WHERE id=?", list(kwargs.values()) + [rid])
+    conn.commit()
+    conn.close()
+
+def db_delete(table, rid):
+    conn = get_db()
+    conn.execute(f"DELETE FROM {table} WHERE id=?", (rid,))
+    conn.commit()
+    conn.close()
+
+def db_count(table, where=None):
+    conn = get_db()
+    q = f"SELECT COUNT(*) FROM {table}"
+    params = []
+    if where:
+        conditions = ' AND '.join([f"{k}=?" for k in where.keys()])
+        q += f" WHERE {conditions}"
+        params = list(where.values())
+    count = conn.execute(q, params).fetchone()[0]
+    conn.close()
+    return count
+
+def db_sum(table, col, where=None):
+    conn = get_db()
+    q = f"SELECT COALESCE(SUM({col}),0) FROM {table}"
+    params = []
+    if where:
+        conditions = ' AND '.join([f"{k}=?" for k in where.keys()])
+        q += f" WHERE {conditions}"
+        params = list(where.values())
+    total = conn.execute(q, params).fetchone()[0]
+    conn.close()
+    return total

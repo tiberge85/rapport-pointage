@@ -182,6 +182,31 @@
                 <div class="nav-section-title" onclick="toggleSection('sec-compta')">💰 COMPTABILITÉ <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
                     <a href="/comptabilite" class="{% if page == 'comptabilite' %}active{% endif %}">Factures</a>
+                    <a href="/tresorerie" class="{% if page == 'tresorerie' %}active{% endif %}">Caisse / Banque</a>
+                    <a href="/depenses" class="{% if page == 'depenses' %}active{% endif %}">Dépenses</a>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Projets & productivité -->
+            <div class="nav-section" id="sec-projets">
+                <div class="nav-section-title" onclick="toggleSection('sec-projets')">📁 PROJETS <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/projets" class="{% if page == 'projets' %}active{% endif %}">Projets</a>
+                    <a href="/taches" class="{% if page == 'taches' %}active{% endif %}">Tâches</a>
+                    <a href="/tickets" class="{% if page == 'tickets' %}active{% endif %}">Tickets / Support</a>
+                    <a href="/calendrier" class="{% if page == 'calendrier' %}active{% endif %}">Calendrier</a>
+                    <a href="/todos" class="{% if page == 'todos' %}active{% endif %}">Mes Todos</a>
+                </div>
+            </div>
+            
+            {% if 'clients' in permissions %}
+            <!-- CRM -->
+            <div class="nav-section" id="sec-crm">
+                <div class="nav-section-title" onclick="toggleSection('sec-crm')">🎯 CRM <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/prospects" class="{% if page == 'prospects' %}active{% endif %}">Prospects</a>
+                    <a href="/stock" class="{% if page == 'stock' %}active{% endif %}">Stock</a>
                 </div>
             </div>
             {% endif %}
