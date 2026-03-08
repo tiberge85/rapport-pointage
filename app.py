@@ -65,6 +65,9 @@ from models import (init_rh_tables, get_all_employees, get_employee_by_id,
 init_rh_tables()
 init_extra_tables()
 
+from models import init_mg_tables
+init_mg_tables()
+
 # Register module routes
 from modules_routes import modules_bp
 app.register_blueprint(modules_bp)
@@ -119,6 +122,24 @@ def inject_globals():
 
 
 # ======================== AUTH ROUTES ========================
+
+@app.route('/robots.txt')
+def robots_txt():
+    return "User-agent: *\nAllow: /\n", 200, {'Content-Type': 'text/plain'}
+
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(app.config.get('STATIC_FOLDER', 'static'), 'logo_wannygest.png', mimetype='image/png')
+
+@app.errorhandler(500)
+def internal_error(e):
+    import traceback
+    traceback.print_exc()
+    return f"<h1>Erreur serveur</h1><p>{str(e)}</p><a href='/'>Retour</a>", 500
+
+@app.errorhandler(404)
+def not_found(e):
+    return f"<h1>Page non trouvée</h1><a href='/'>Retour à l'accueil</a>", 404
 
 @app.route('/')
 def welcome():

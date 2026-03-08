@@ -268,3 +268,64 @@ def todos_toggle(tid):
 @login_required
 def todos_delete(tid):
     db_delete('user_todos', tid); return redirect(url_for('modules.todos'))
+
+
+# ======================== MOYENS GÉNÉRAUX ========================
+
+@modules_bp.route('/moyens-generaux')
+@login_required
+def moyens_generaux():
+    vehicules = db_get_all('mg_vehicules') if _table_exists('mg_vehicules') else []
+    fournitures = db_get_all('mg_fournitures') if _table_exists('mg_fournitures') else []
+    maintenance = db_get_all('mg_maintenance') if _table_exists('mg_maintenance') else []
+    return render_template('mod_moyens.html', page='moyens',
+        vehicules=vehicules, fournitures=fournitures, maintenance=maintenance)
+
+@modules_bp.route('/moyens-generaux/vehicules', methods=['GET', 'POST'])
+@login_required
+def mg_vehicules():
+    if request.method == 'POST':
+        db_insert('mg_vehicules', immatriculation=request.form['immatriculation'],
+            marque=request.form.get('marque',''), modele=request.form.get('modele',''),
+            affectation=request.form.get('affectation',''), km=int(request.form.get('km',0) or 0),
+            assurance_exp=request.form.get('assurance_exp',''), visite_exp=request.form.get('visite_exp',''),
+            status=request.form.get('status','disponible'))
+        flash("Véhicule ajouté", "success"); return redirect(url_for('modules.mg_vehicules'))
+    items = db_get_all('mg_vehicules')
+    return render_template('mod_vehicules.html', page='vehicules', items=items)
+
+@modules_bp.route('/moyens-generaux/fournitures', methods=['GET', 'POST'])
+@login_required
+def mg_fournitures():
+    if request.method == 'POST':
+        db_insert('mg_fournitures', name=request.form['name'], category=request.form.get('category',''),
+            quantity=int(request.form.get('quantity',0) or 0), unit=request.form.get('unit',''),
+            min_stock=int(request.form.get('min_stock',0) or 0))
+        flash("Fourniture ajoutée", "success"); return redirect(url_for('modules.mg_fournitures'))
+    items = db_get_all('mg_fournitures')
+    return render_template('mod_fournitures.html', page='fournitures', items=items)
+
+@modules_bp.route('/moyens-generaux/maintenance', methods=['GET', 'POST'])
+@login_required
+def mg_maintenance():
+    if request.method == 'POST':
+        db_insert('mg_maintenance', equipment=request.form['equipment'], description=request.form.get('description',''),
+            priority=request.form.get('priority','normale'), status='en_attente',
+            requested_by=session['user_id'], date_requested=request.form.get('date_requested',''))
+        flash("Demande de maintenance créée", "success"); return redirect(url_for('modules.mg_maintenance'))
+    items = db_get_all('mg_maintenance')
+    return render_template('mod_maintenance.html', page='maintenance', items=items)
+
+@modules_bp.route('/moyens-generaux/maintenance/<int:mid>/status/<status>')
+@login_required
+def mg_maintenance_status(mid, status):
+    if status in ('en_cours','termine'):
+        db_update('mg_maintenance', mid, status=status)
+    return redirect(url_for('modules.mg_maintenance'))
+
+def _table_exists(table_name):
+    from models import get_db
+    conn = get_db()
+    r = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table_name,)).fetchone()
+    conn.close()
+    return r is not None

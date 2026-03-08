@@ -145,16 +145,17 @@
             </div>
             {% endif %}
             
-            {% if 'visites' in permissions or 'proforma' in permissions %}
-            <!-- Gestion commerciale -->
+            {% if 'visites' in permissions or 'proforma' in permissions or 'clients' in permissions %}
+            <!-- Gestion commerciale & CRM -->
             <div class="nav-section" id="sec-commercial">
-                <div class="nav-section-title" onclick="toggleSection('sec-commercial')">💼 GESTION COMMERCIALE <span class="arrow">▼</span></div>
+                <div class="nav-section-title" onclick="toggleSection('sec-commercial')">💼 COMMERCIAL &amp; CRM <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
                     {% if 'visites' in permissions %}<a href="/visites" class="{% if page == 'visites' %}active{% endif %}">Rapports de visite</a>{% endif %}
-                    {% if 'proforma' in permissions %}<a href="/visites?tab=en_attente" class="{% if page == 'proforma' %}active{% endif %}">Proformas / Devis</a>{% endif %}
-                    {% if 'proforma' in permissions %}<a href="/devis" class="{% if page == 'devis' %}active{% endif %}">Édition devis</a>{% endif %}
+                    {% if 'proforma' in permissions %}<a href="/devis" class="{% if page == 'devis' %}active{% endif %}">Devis / Proformas</a>{% endif %}
+                    {% if 'clients' in permissions %}<a href="/prospects" class="{% if page == 'prospects' %}active{% endif %}">Prospects</a>{% endif %}
                     {% if 'clients' in permissions %}<a href="/clients" class="{% if page == 'clients' %}active{% endif %}">Clients</a>{% endif %}
                     {% if 'contrats' in permissions %}<a href="/contrats" class="{% if page == 'contrats' %}active{% endif %}">Contrats</a>{% endif %}
+                    {% if 'clients' in permissions %}<a href="/stock" class="{% if page == 'stock' %}active{% endif %}">Stock</a>{% endif %}
                 </div>
             </div>
             {% endif %}
@@ -200,16 +201,16 @@
                 </div>
             </div>
             
-            {% if 'clients' in permissions %}
-            <!-- CRM -->
-            <div class="nav-section" id="sec-crm">
-                <div class="nav-section-title" onclick="toggleSection('sec-crm')">🎯 CRM <span class="arrow">▼</span></div>
+            <!-- Moyens Généraux -->
+            <div class="nav-section" id="sec-moyens">
+                <div class="nav-section-title" onclick="toggleSection('sec-moyens')">🏠 MOYENS GÉNÉRAUX <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
-                    <a href="/prospects" class="{% if page == 'prospects' %}active{% endif %}">Prospects</a>
-                    <a href="/stock" class="{% if page == 'stock' %}active{% endif %}">Stock</a>
+                    <a href="/moyens-generaux" class="{% if page == 'moyens' %}active{% endif %}">Tableau de bord</a>
+                    <a href="/moyens-generaux/vehicules" class="{% if page == 'vehicules' %}active{% endif %}">Parc véhicules</a>
+                    <a href="/moyens-generaux/fournitures" class="{% if page == 'fournitures' %}active{% endif %}">Fournitures</a>
+                    <a href="/moyens-generaux/maintenance" class="{% if page == 'maintenance' %}active{% endif %}">Maintenance</a>
                 </div>
             </div>
-            {% endif %}
             
             {% if 'admin' in permissions %}
             <!-- Administration -->

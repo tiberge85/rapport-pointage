@@ -236,6 +236,15 @@ def calc_employee_stats(emp, hp=0):
             'overtime': m2h(overtime),
         })
     
+    # === ASSIDUITÉ (basée sur le taux de présence) ===
+    presence_rate = (days_present / len(records) * 100) if len(records) > 0 else 0
+    if presence_rate >= 95:
+        observation = "Assidu"
+    elif presence_rate >= 80:
+        observation = "Moyennement assidu"
+    else:
+        observation = "Non assidu"
+    
     stats = {
         'days_required': len(records),
         'days_present': days_present,
@@ -248,7 +257,8 @@ def calc_employee_stats(emp, hp=0):
         'total_overtime': total_overtime,
         'total_deficit': total_deficit,
         'total_late_mins': total_late_mins,
-        'observation': "Assidu" if days_absent <= 2 and days_late <= 3 else "Non-assidu",
+        'presence_rate': round(presence_rate, 1),
+        'observation': observation,
     }
     
     return enriched, stats
@@ -409,24 +419,30 @@ def gen_rapport_presence(story, emps, all_stats, S, provider_name, provider_info
     story.append(Spacer(1, 4*mm))
     
     hdrs = ["N°","Employé","Jours<br/>obligat.","Jours de<br/>présence",
-            "Jours de<br/>retards","Jours<br/>ponctuel","Jours<br/>d'absences",
-            "Erreurs<br/>badge","Observation"]
+            "Taux<br/>présence","Jours de<br/>retards","Jours<br/>ponctuel","Jours<br/>d'absences",
+            "Observation"]
     hrow = [Paragraph(h, S['rh']) for h in hdrs]
-    cw = [8*mm, 32*mm, 18*mm, 18*mm, 18*mm, 18*mm, 18*mm, 16*mm, 22*mm]
+    cw = [8*mm, 30*mm, 16*mm, 16*mm, 16*mm, 16*mm, 16*mm, 16*mm, 28*mm]
     
     td = [hrow]
     for i, (emp, (enriched, stats)) in enumerate(zip(emps, all_stats), 1):
-        obs_style = S['rvo'] if stats['observation'] == "Non-assidu" else S['rv']
+        obs = stats['observation']
+        if obs == "Non assidu":
+            obs_style = S['rvo']
+        elif obs == "Moyennement assidu":
+            obs_style = ParagraphStyle('rvblue', fontName='Helvetica-Bold', fontSize=7, textColor=BLUE, alignment=TA_CENTER, leading=9)
+        else:
+            obs_style = ParagraphStyle('rvgreen', fontName='Helvetica-Bold', fontSize=7, textColor=GREEN, alignment=TA_CENTER, leading=9)
         td.append([
             Paragraph(str(i), S['rv']),
             Paragraph(emp['name'], S['rvb']),
-            Paragraph(f"{stats['days_required']} jours", S['rv']),
-            Paragraph(f"{stats['days_present']} jours", S['rv']),
-            Paragraph(f"{stats['days_late']} jours", S['rv']),
-            Paragraph(f"{stats['days_punctual']} jours", S['rv']),
-            Paragraph(f"{stats['days_absent']} jours", S['rv']),
-            Paragraph(f"{stats['days_badge_error']} jours", S['rv']),
-            Paragraph(stats['observation'], obs_style),
+            Paragraph(f"{stats['days_required']} j", S['rv']),
+            Paragraph(f"{stats['days_present']} j", S['rv']),
+            Paragraph(f"{stats.get('presence_rate', 0):.0f}%", S['rv']),
+            Paragraph(f"{stats['days_late']} j", S['rv']),
+            Paragraph(f"{stats['days_punctual']} j", S['rv']),
+            Paragraph(f"{stats['days_absent']} j", S['rv']),
+            Paragraph(obs, obs_style),
         ])
     
     t = Table(td, colWidths=cw, repeatRows=1)
@@ -530,71 +546,132 @@ def _prepare_logo(logo_path, work_dir=None):
 
 
 def _generate_chart_image(pct_presence, pct_absence, logo_path=None, work_dir=None):
-    """Génère le graphique donut en image PIL avec le logo composité au centre."""
+    """Génère un graphique donut 3D avec légende et logo au centre."""
     try:
         from PIL import Image, ImageDraw, ImageFont
         
-        SIZE = 800
-        cx, cy = SIZE // 2, SIZE // 2
-        outer_r = 340
-        inner_r = 170
+        W, H = 1000, 700
+        cx, cy = 350, 320
+        outer_r = 260
+        inner_r = 130
+        depth = 30  # Profondeur 3D
         
-        # Créer l'image de base (fond blanc)
-        img = Image.new('RGBA', (SIZE, SIZE), (255, 255, 255, 255))
+        img = Image.new('RGBA', (W, H), (255, 255, 255, 255))
         draw = ImageDraw.Draw(img)
         
         # Couleurs
         teal = (26, 122, 109, 255)
+        teal_dark = (18, 90, 80, 255)
         red = (232, 93, 74, 255)
+        red_dark = (180, 65, 50, 255)
+        green_c = (46, 125, 50, 255)
+        orange_c = (232, 103, 42, 255)
+        blue_c = (26, 58, 92, 255)
         
-        # Dessiner le disque complet en teal (présence)
+        # === 3D DEPTH (ombres dessous) ===
+        for d in range(depth, 0, -1):
+            shade = int(200 - d * 3)
+            draw.ellipse([cx-outer_r, cy-outer_r+d, cx+outer_r, cy+outer_r+d],
+                        fill=(shade, shade, shade, 80))
+        
+        # Disque 3D inférieur (ombre du donut)
+        for d in range(depth, 0, -1):
+            draw.ellipse([cx-outer_r, cy-outer_r+d, cx+outer_r, cy+outer_r+d], fill=teal_dark)
+            if pct_absence > 0:
+                a_start = -90
+                a_end = -90 + (360 * pct_absence / 100)
+                draw.pieslice([cx-outer_r, cy-outer_r+d, cx+outer_r, cy+outer_r+d],
+                             start=a_start, end=a_end, fill=red_dark)
+        
+        # Disque principal (dessus)
         draw.ellipse([cx-outer_r, cy-outer_r, cx+outer_r, cy+outer_r], fill=teal)
-        
-        # Dessiner le secteur absence (rouge) par-dessus
         if pct_absence > 0:
-            start_angle = 90 - (360 * pct_presence / 100)
-            end_angle = 90
-            # PIL: 0° = 3h, angles en sens horaire
-            # On veut: présence en bas, absence en haut-droite
             a_start = -90
             a_end = -90 + (360 * pct_absence / 100)
             draw.pieslice([cx-outer_r, cy-outer_r, cx+outer_r, cy+outer_r],
-                          start=a_start, end=a_end, fill=red)
+                         start=a_start, end=a_end, fill=red)
         
-        # Découper le trou central
+        # Reflet lumineux (effet 3D)
+        for i in range(20):
+            alpha = int(40 - i * 2)
+            draw.ellipse([cx-outer_r+i+30, cy-outer_r+i+20, cx-30, cy-30],
+                        fill=(255, 255, 255, alpha))
+        
+        # Trou central
         if logo_path and os.path.exists(logo_path):
-            # Préparer le logo nettoyé
             clean_path = _prepare_logo(logo_path, work_dir)
             if clean_path:
                 logo = Image.open(clean_path).convert('RGBA')
-                logo_size = inner_r * 2 + 10  # Légèrement plus grand que le trou
+                logo_size = inner_r * 2 + 10
                 logo = logo.resize((logo_size, logo_size), Image.LANCZOS)
-                
-                # Coller le logo au centre (avec sa transparence)
-                # Le logo rond va masquer le centre du graphique
-                lx = cx - logo_size // 2
-                ly = cy - logo_size // 2
+                lx, ly = cx - logo_size // 2, cy - logo_size // 2
                 img.paste(logo, (lx, ly), logo)
             else:
-                # Fallback : trou blanc
-                draw.ellipse([cx-inner_r, cy-inner_r, cx+inner_r, cy+inner_r],
-                             fill=(255, 255, 255, 255))
+                draw.ellipse([cx-inner_r, cy-inner_r, cx+inner_r, cy+inner_r], fill=(255,255,255,255))
         else:
-            # Pas de logo : trou blanc avec texte
-            draw.ellipse([cx-inner_r, cy-inner_r, cx+inner_r, cy+inner_r],
-                         fill=(255, 255, 255, 255))
-            # Texte pourcentage au centre
-            try:
-                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
-            except:
-                font = ImageFont.load_default()
+            draw.ellipse([cx-inner_r, cy-inner_r, cx+inner_r, cy+inner_r], fill=(255,255,255,255))
+            try: font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 42)
+            except: font = ImageFont.load_default()
             text = f"{pct_presence:.1f}%"
             bbox = draw.textbbox((0, 0), text, font=font)
-            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
             draw.text((cx - tw//2, cy - th//2), text, fill=teal, font=font)
         
-        # Convertir en RGB (PDF ne gère pas bien RGBA)
-        final = Image.new('RGB', (SIZE, SIZE), (255, 255, 255))
+        # === LÉGENDE (à droite) ===
+        try:
+            font_leg = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 22)
+            font_leg_b = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+            font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+            font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+        except:
+            font_leg = font_leg_b = font_title = font_small = ImageFont.load_default()
+        
+        lx_start = 660
+        ly = 80
+        
+        draw.text((lx_start, ly), "Légende", fill=blue_c, font=font_title)
+        ly += 45
+        
+        # Présence
+        draw.rounded_rectangle([lx_start, ly, lx_start+28, ly+28], radius=4, fill=teal)
+        draw.text((lx_start+36, ly), f"Présence: {pct_presence:.1f}%", fill=(60,60,60), font=font_leg_b)
+        ly += 45
+        
+        # Absence
+        draw.rounded_rectangle([lx_start, ly, lx_start+28, ly+28], radius=4, fill=red)
+        draw.text((lx_start+36, ly), f"Absence: {pct_absence:.1f}%", fill=(60,60,60), font=font_leg_b)
+        ly += 60
+        
+        # Abréviations
+        draw.text((lx_start, ly), "Abréviations", fill=blue_c, font=font_title)
+        ly += 35
+        abbrevs = [
+            ("H. travail.", "Heures travaillées"),
+            ("H. obligat.", "Heures obligatoires"),
+            ("H. Respectée", "Heures respectées (OUI/NON)"),
+            ("H. sup.", "Heures supplémentaires"),
+            ("ABS", "Absent"),
+            ("P", "Présent"),
+            ("R", "Retard"),
+        ]
+        for abbr, full in abbrevs:
+            draw.text((lx_start, ly), f"{abbr}", fill=orange_c, font=font_small)
+            draw.text((lx_start + 130, ly), f"= {full}", fill=(100,100,100), font=font_small)
+            ly += 28
+        
+        # Assiduité rules
+        ly += 15
+        draw.text((lx_start, ly), "Règles d'assiduité", fill=blue_c, font=font_title)
+        ly += 32
+        rules = [("≥ 95%", "Assidu", green_c), ("80-95%", "Moy. assidu", orange_c), ("< 80%", "Non assidu", red)]
+        for pct_label, label, color in rules:
+            draw.rounded_rectangle([lx_start, ly, lx_start+12, ly+12], radius=2, fill=color)
+            draw.text((lx_start+20, ly-4), f"{pct_label} → {label}", fill=(80,80,80), font=font_small)
+            ly += 28
+        
+        # Convert to RGB
+        final = Image.new('RGB', (W, H), (255, 255, 255))
         final.paste(img, mask=img.split()[3])
         
         out_dir = work_dir or os.path.dirname(os.path.abspath(logo_path)) if logo_path else '/tmp'

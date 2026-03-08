@@ -1269,3 +1269,33 @@ def db_sum(table, col, where=None):
     total = conn.execute(q, params).fetchone()[0]
     conn.close()
     return total
+
+
+def init_mg_tables():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS mg_vehicules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            immatriculation TEXT, marque TEXT, modele TEXT,
+            affectation TEXT, km INTEGER DEFAULT 0,
+            assurance_exp TEXT, visite_exp TEXT,
+            status TEXT DEFAULT 'disponible',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS mg_fournitures (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, category TEXT,
+            quantity INTEGER DEFAULT 0, unit TEXT,
+            min_stock INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS mg_maintenance (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            equipment TEXT NOT NULL, description TEXT,
+            priority TEXT DEFAULT 'normale', status TEXT DEFAULT 'en_attente',
+            requested_by INTEGER, date_requested TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    conn.commit()
+    conn.close()
