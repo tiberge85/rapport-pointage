@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% block title %}WannyGest - Devis depuis modèle{% endblock %}{% block content %}
+<div class="page-header"><h1>📝 Nouveau devis — {{ tpl.name }}</h1><span class="badge-status pending">{{ tpl.category or 'Général' }}</span></div>
+<form method="post" action="/devis/new">
+<input type="hidden" name="from_template" value="{{ tpl.id }}">
+<div class="card" style="margin-bottom:14px"><div class="card-header"><h3>Client</h3></div><div class="card-body">
+<div class="form-row"><div class="form-group"><label>Client *</label><select name="client_id" id="clientSel" onchange="fillClient()">
+<option value="">— Sélectionner —</option>{% for c in clients %}<option value="{{ c.id }}" data-name="{{ c.name }}" data-tel="{{ c.tel or '' }}" data-email="{{ c.email or '' }}">{{ c.name }}</option>{% endfor %}</select></div>
+<div class="form-group"><label>Objet</label><input type="text" name="objet" value="{{ tpl.name }}"></div></div>
+</div></div>
+
+<div class="card" style="margin-bottom:14px"><div class="card-header"><h3>Articles (pré-remplis depuis le modèle)</h3></div><div class="card-body">
+<div id="devisItems">
+{% for item in items %}
+<div class="item-row" style="display:grid;grid-template-columns:3fr 1fr 1fr 1fr 40px;gap:6px;margin-bottom:4px">
+    <input type="text" name="designation[]" value="{{ item.designation }}" style="padding:7px;border:1.5px solid #ddd;border-radius:6px;font-size:12px">
+    <input type="number" name="qty[]" value="{{ item.quantity }}" min="1" style="padding:7px;border:1.5px solid #ddd;border-radius:6px;font-size:12px">
+    <input type="number" name="price[]" value="{{ item.unit_price }}" step="500" style="padding:7px;border:1.5px solid #ddd;border-radius:6px;font-size:12px">
+    <div style="padding:7px;font-size:12px;font-weight:600;text-align:right" class="line-total">{{ '{:,.0f}'.format(item.quantity * item.unit_price) }}</div>
+    <button type="button" onclick="this.parentElement.remove()" style="background:#fde8e8;border:none;border-radius:6px;cursor:pointer;color:#c53030">✕</button>
+</div>
+{% endfor %}
+</div>
+<button type="button" onclick="addDevisRow()" class="btn btn-outline btn-sm">+ Article</button>
+</div></div>
+
+{% if tpl.notes %}
+<div class="card" style="margin-bottom:14px"><div class="card-body">
+<div class="form-group"><label>Notes / conditions</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px">{{ tpl.notes }}</textarea></div>
+</div></div>{% endif %}
+
+<div style="display:flex;gap:8px"><a href="/devis/templates" class="btn btn-outline">Retour</a><button type="submit" class="btn btn-primary" style="flex:1">📝 Créer le devis</button></div>
+</form>
+<script>
+function fillClient(){var o=document.getElementById('clientSel').selectedOptions[0];}
+function addDevisRow(){
+    var d=document.createElement('div');d.className='item-row';d.style.cssText='display:grid;grid-template-columns:3fr 1fr 1fr 1fr 40px;gap:6px;margin-bottom:4px';
+    d.innerHTML='<input type="text" name="designation[]" style="padding:7px;border:1.5px solid #ddd;border-radius:6px;font-size:12px"><input type="number" name="qty[]" value="1" min="1" style="padding:7px;border:1.5px solid #ddd;border-radius:6px;font-size:12px"><input type="number" name="price[]" value="0" step="500" style="padding:7px;border:1.5px solid #ddd;border-radius:6px;font-size:12px"><div style="padding:7px;font-size:12px"></div><button type="button" onclick="this.parentElement.remove()" style="background:#fde8e8;border:none;border-radius:6px;cursor:pointer;color:#c53030">✕</button>';
+    document.getElementById('devisItems').appendChild(d);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}{% block title %}WannyGest - Kanban{% endblock %}{% block content %}
+<style>
+.kanban-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.kanban{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;min-height:65vh}
+.kanban-col{background:#f5f7fa;border-radius:12px;padding:10px;min-height:300px;transition:background 0.2s}
+.kanban-col.drag-over{background:#e3f2fd;border:2px dashed #42a5f5}
+.kanban-col-header{padding:10px 14px;border-radius:8px;color:#fff;font-weight:700;font-size:13px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.kanban-col-header .count{background:rgba(255,255,255,0.3);padding:2px 8px;border-radius:12px;font-size:11px}
+.k-card{background:#fff;border-radius:10px;padding:12px;margin-bottom:8px;box-shadow:0 2px 6px rgba(0,0,0,0.06);border-left:4px solid #ddd;cursor:grab;transition:all 0.15s;user-select:none}
+.k-card:active{cursor:grabbing;transform:rotate(2deg);box-shadow:0 8px 24px rgba(0,0,0,0.15)}
+.k-card.dragging{opacity:0.4}
+.k-card.haute{border-left-color:#c53030}.k-card.moyenne{border-left-color:#ff9800}.k-card.basse{border-left-color:#2e7d32}
+.k-title{font-weight:700;font-size:13px;color:#1a3a5c;margin-bottom:4px}
+.k-meta{font-size:10px;color:#888;display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px}
+.k-desc{font-size:11px;color:#666;margin-top:4px;line-height:1.4}
+.k-tags{display:flex;gap:3px;margin-top:5px;flex-wrap:wrap}
+.k-tag{padding:1px 6px;border-radius:10px;font-size:9px;font-weight:600;background:#f0f0f0;color:#555}
+.k-tag.haute{background:#fde8e8;color:#c53030}.k-tag.moyenne{background:#fff3e0;color:#e8672a}.k-tag.basse{background:#e8f5e9;color:#2e7d32}
+.k-footer{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:10px}
+.k-avatar{width:22px;height:22px;border-radius:50%;background:#1a3a5c;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:9px;font-weight:700}
+.empty-state{text-align:center;color:#bbb;padding:40px 10px;font-size:12px;border:2px dashed #e0e0e0;border-radius:10px;margin:8px 0}
+@media(max-width:900px){.kanban{grid-template-columns:1fr 1fr}}.
+@media(max-width:600px){.kanban{grid-template-columns:1fr}}
+</style>
+
+<div class="kanban-header">
+    <h1 style="font-size:20px">📋 Kanban</h1>
+    <div style="display:flex;gap:6px">
+        <a href="/taches" class="btn btn-outline btn-sm">📋 Liste</a>
+        <a href="/taches/new" class="btn btn-primary btn-sm" onclick="return addTask()">+ Tâche</a>
+    </div>
+</div>
+
+<div class="kanban" id="kanbanBoard">
+    {% set cols = [
+        ('a_faire', '📝 À faire', '#42a5f5'),
+        ('en_cours', '🔄 En cours', '#ff9800'),
+        ('en_revue', '👁️ En revue', '#7b1fa2'),
+        ('termine', '✅ Terminé', '#2e7d32')
+    ] %}
+    {% for status, label, color in cols %}
+    <div class="kanban-col" id="col-{{ status }}" data-status="{{ status }}"
+         ondragover="event.preventDefault();this.classList.add('drag-over')"
+         ondragleave="this.classList.remove('drag-over')"
+         ondrop="dropCard(event,'{{ status }}')">
+        <div class="kanban-col-header" style="background:{{ color }}">{{ label }} <span class="count">{{ by_status[status]|length }}</span></div>
+        {% for t in by_status[status] %}
+        <div class="k-card {{ t.priority }}" draggable="true" id="card-{{ t.id }}"
+             ondragstart="event.dataTransfer.setData('text/plain',{{ t.id }});this.classList.add('dragging')"
+             ondragend="this.classList.remove('dragging')">
+            <div class="k-title">{{ t.title }}</div>
+            {% if t.description %}<div class="k-desc">{{ t.description[:80] }}{% if t.description|length > 80 %}...{% endif %}</div>{% endif %}
+            <div class="k-tags">
+                <span class="k-tag {{ t.priority }}">{{ t.priority }}</span>
+                {% if t.project_name %}<span class="k-tag">{{ t.project_name[:15] }}</span>{% endif %}
+            </div>
+            <div class="k-footer">
+                <div>{% if t.assigned_to %}<span class="k-avatar">{{ user_map.get(t.assigned_to, '?')[:2] | upper }}</span>{% endif %}</div>
+                <span>{% if t.due_date %}📅 {{ t.due_date }}{% endif %}</span>
+            </div>
+        </div>
+        {% else %}<div class="empty-state">Glissez des cartes ici</div>{% endfor %}
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+function dropCard(e, newStatus) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('drag-over');
+    var tid = e.dataTransfer.getData('text/plain');
+    // Optimistic UI update
+    var card = document.getElementById('card-' + tid);
+    if (card) e.currentTarget.appendChild(card);
+    // Update counts
+    document.querySelectorAll('.kanban-col').forEach(function(col) {
+        var cnt = col.querySelectorAll('.k-card').length;
+        col.querySelector('.count').textContent = cnt;
+    });
+    // Server sync
+    fetch('/kanban/move/' + tid + '/' + newStatus).catch(function(){});
+}
+</script>
+{% endblock %}

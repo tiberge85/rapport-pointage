@@ -4,7 +4,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
 from models import (db_insert, db_get_all, db_get_by_id, db_update, db_delete, db_count, db_sum,
                     get_user_by_id, get_all_clients, get_all_users, log_activity,
-                    has_permission, get_role_permissions)
+                    has_permission, get_role_permissions, log_audit)
 from functools import wraps
 
 modules_bp = Blueprint('modules', __name__)

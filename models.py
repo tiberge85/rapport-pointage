@@ -1429,3 +1429,109 @@ def get_maintenance_due():
         AND (next_maintenance <= ? OR next_maintenance IS NULL) ORDER BY next_maintenance ASC""", (today,)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+# ======================== MIGRATIONS V5 ========================
+
+def migrate_v5():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS audit_trail (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, user_name TEXT,
+            table_name TEXT, record_id INTEGER,
+            action TEXT, field_name TEXT,
+            old_value TEXT, new_value TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS devis_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, category TEXT,
+            description TEXT, items_json TEXT,
+            notes TEXT, created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users(id)
+        );
+    ''')
+    # Task kanban columns
+    for col in ['kanban_order', 'color']:
+        try: conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT DEFAULT ''")
+        except: pass
+    conn.commit(); conn.close()
+
+
+def log_audit(user_id, user_name, table_name, record_id, action, field_name='', old_value='', new_value=''):
+    conn = get_db()
+    conn.execute("""INSERT INTO audit_trail (user_id, user_name, table_name, record_id, action, field_name, old_value, new_value)
+        VALUES (?,?,?,?,?,?,?,?)""", (user_id, user_name, table_name, record_id, action, field_name, str(old_value)[:500], str(new_value)[:500]))
+    conn.commit(); conn.close()
+
+
+def get_audit_trail(table_name=None, record_id=None, limit=50):
+    conn = get_db()
+    if table_name and record_id:
+        rows = conn.execute("SELECT * FROM audit_trail WHERE table_name=? AND record_id=? ORDER BY created_at DESC LIMIT ?",
+            (table_name, record_id, limit)).fetchall()
+    elif table_name:
+        rows = conn.execute("SELECT * FROM audit_trail WHERE table_name=? ORDER BY created_at DESC LIMIT ?",
+            (table_name, limit)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM audit_trail ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_executive_stats():
+    """Statistiques pour le tableau de bord exécutif."""
+    conn = get_db()
+    s = {}
+    # Factures
+    s['factures_total'] = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()[0]
+    s['factures_payees'] = conn.execute("SELECT COUNT(*) FROM invoices WHERE status='payee'").fetchone()[0]
+    s['montant_facture'] = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices").fetchone()[0]
+    s['montant_paye'] = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='payee'").fetchone()[0]
+    s['montant_impaye'] = s['montant_facture'] - s['montant_paye']
+    # Devis
+    s['devis_total'] = conn.execute("SELECT COUNT(*) FROM devis").fetchone()[0]
+    s['devis_acceptes'] = conn.execute("SELECT COUNT(*) FROM devis WHERE status='accepte'").fetchone()[0]
+    s['ca_devis'] = conn.execute("SELECT COALESCE(SUM(total_ttc),0) FROM devis WHERE status='accepte'").fetchone()[0]
+    # Clients
+    s['clients'] = conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0]
+    # Employés
+    try: s['employes'] = conn.execute("SELECT COUNT(*) FROM employees WHERE status='actif'").fetchone()[0]
+    except: s['employes'] = 0
+    # Prospects
+    s['prospects'] = conn.execute("SELECT COUNT(*) FROM prospects").fetchone()[0]
+    s['prospects_gagnes'] = conn.execute("SELECT COUNT(*) FROM prospects WHERE status='gagne'").fetchone()[0]
+    # Jobs
+    s['rapports'] = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+    # Trésorerie
+    try:
+        s['recettes'] = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE type='recette'").fetchone()[0]
+        s['depenses'] = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE type='depense'").fetchone()[0]
+    except:
+        s['recettes'] = 0; s['depenses'] = 0
+    s['solde'] = s['recettes'] - s['depenses']
+    # RH extended
+    try: s['masse_salariale'] = conn.execute("SELECT COALESCE(SUM(salary),0) FROM employees WHERE status='actif'").fetchone()[0]
+    except: s['masse_salariale'] = 0
+    try: s['conges_pending'] = conn.execute("SELECT COUNT(*) FROM leaves WHERE status='en_attente'").fetchone()[0]
+    except: s['conges_pending'] = 0
+    try: s['formations'] = conn.execute("SELECT COUNT(*) FROM rh_trainings WHERE status='planifie'").fetchone()[0]
+    except: s['formations'] = 0
+    conn.close()
+    return s
+
+
+def get_devis_templates():
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM devis_templates ORDER BY name").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_devis_template(tid):
+    conn = get_db()
+    t = conn.execute("SELECT * FROM devis_templates WHERE id=?", (tid,)).fetchone()
+    conn.close()
+    return dict(t) if t else None

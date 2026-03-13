@@ -156,6 +156,7 @@
                     {% if 'clients' in permissions %}<a href="/prospects" class="{% if page == 'prospects' %}active{% endif %}">Prospects</a>{% endif %}
                     {% if 'visites' in permissions %}<a href="/visites" class="{% if page == 'visites' %}active{% endif %}">Gestion d'interventions</a>{% endif %}
                     {% if 'proforma' in permissions %}<a href="/devis" class="{% if page == 'devis' %}active{% endif %}">Devis / Proformas</a>{% endif %}
+                    {% if 'proforma' in permissions %}<a href="/devis/templates" class="{% if page == 'devis_tpl' %}active{% endif %}">Modèles de devis</a>{% endif %}
                     {% if 'contrats' in permissions %}<a href="/contrats" class="{% if page == 'contrats' %}active{% endif %}">Contrats</a>{% endif %}
                 </div>
             </div>
@@ -202,6 +203,7 @@
                 <div class="nav-section-items">
                     <a href="/projets" class="{% if page == 'projets' %}active{% endif %}">Projets</a>
                     <a href="/taches" class="{% if page == 'taches' %}active{% endif %}">Tâches</a>
+                    <a href="/kanban" class="{% if page == 'kanban' %}active{% endif %}">Kanban</a>
                     <a href="/tickets" class="{% if page == 'tickets' %}active{% endif %}">Tickets / Support</a>
                     <a href="/centre-technique" class="{% if page == 'tech_center' %}active{% endif %}">Centre technique</a>
                     <a href="/calendrier" class="{% if page == 'calendrier' %}active{% endif %}">Calendrier</a>
@@ -230,6 +232,8 @@
                 <div class="nav-section-title" onclick="toggleSection('sec-admin')">⚙️ ADMINISTRATION <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
                     <a href="/admin" class="{% if page == 'admin' %}active{% endif %}">Utilisateurs & rôles</a>
+                    <a href="/historique" class="{% if page == 'historique' %}active{% endif %}">🕓 Historique</a>
+                    <a href="/executif" class="{% if page == 'executif' %}active{% endif %}">📊 Tableau exécutif</a>
                     <a href="/logs" class="{% if page == 'logs' %}active{% endif %}">Logs d'activité</a>
                     <a href="/admin/backup">Sauvegarde BDD</a>
                     <a href="/export/stats">Export statistiques</a>

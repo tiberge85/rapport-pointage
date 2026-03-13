@@ -71,9 +71,12 @@ init_mg_tables()
 
 from models import (init_chat_tables, get_messages, get_direct_messages, 
                     send_message, get_unread_count, db_get_all,
-                    migrate_v4, get_payslip_detail, get_maintenance_due)
+                    migrate_v4, get_payslip_detail, get_maintenance_due,
+                    migrate_v5, log_audit, get_audit_trail, get_executive_stats,
+                    get_devis_templates, get_devis_template)
 init_chat_tables()
 migrate_v4()
+migrate_v5()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -554,6 +557,8 @@ def clients_add():
         request.form.get('address', ''), request.form.get('notes', ''),
         session['user_id']
     )
+    user = get_user_by_id(session['user_id'])
+    log_audit(session['user_id'], user['full_name'] if user else '?', 'clients', 0, 'create', 'name', '', request.form['name'])
     flash("Client ajouté", "success")
     return redirect(url_for('clients_page'))
 
@@ -568,6 +573,8 @@ def clients_edit(cid):
         update_client(cid, name=request.form['name'], tel=request.form.get('tel', ''),
                       email=request.form.get('email', ''), contact_name=request.form.get('contact_name', ''),
                       address=request.form.get('address', ''), notes=request.form.get('notes', ''))
+        user = get_user_by_id(session['user_id'])
+        log_audit(session['user_id'], user['full_name'] if user else '?', 'clients', cid, 'update', 'name', client['name'], request.form['name'])
         flash("Client modifié", "success")
         return redirect(url_for('clients_page'))
     return render_template('edit_client.html', page='clients', client=client)
@@ -1692,6 +1699,227 @@ def rh_annonces_add():
     db_insert('rh_announcements', title=request.form['title'], content=request.form.get('content',''),
         priority=request.form.get('priority','normale'), created_by=session['user_id'])
     flash("Annonce publiée", "success"); return redirect(url_for('rh_annonces'))
+
+
+# ======================== KANBAN ========================
+
+@app.route('/kanban')
+@login_required
+def kanban():
+    from models import db_get_all, get_all_users, get_db
+    user = get_user_by_id(session['user_id'])
+    if user and user['role'] == 'admin':
+        tasks = db_get_all('tasks')
+    else:
+        tasks = db_get_all('tasks', where={'assigned_to': session['user_id']})
+    # Enrich with project names
+    conn = get_db()
+    projects = {}
+    try:
+        for p in conn.execute("SELECT id, name FROM projects").fetchall():
+            projects[p['id']] = p['name']
+    except: pass
+    conn.close()
+    for t in tasks:
+        t['project_name'] = projects.get(t.get('project_id'), '')
+    by_status = {'a_faire': [], 'en_cours': [], 'en_revue': [], 'termine': []}
+    for t in tasks:
+        s = t.get('status', 'a_faire')
+        if s in by_status: by_status[s].append(t)
+        else: by_status['a_faire'].append(t)
+    users = get_all_users()
+    user_map = {u['id']: u['full_name'] for u in users}
+    return render_template('kanban.html', page='kanban', by_status=by_status, users=users, user_map=user_map)
+
+@app.route('/kanban/move/<int:tid>/<status>')
+@login_required
+def kanban_move(tid, status):
+    from models import db_update
+    if status in ('a_faire','en_cours','en_revue','termine'):
+        db_update('tasks', tid, status=status)
+        user = get_user_by_id(session['user_id'])
+        log_audit(session['user_id'], user['full_name'] if user else '?', 'tasks', tid, 'status_change', 'status', '', status)
+    return redirect(url_for('kanban'))
+
+
+# ======================== HISTORIQUE DES MODIFICATIONS ========================
+
+@app.route('/historique')
+@permission_required('admin')
+def historique():
+    table = request.args.get('table', '')
+    trail = get_audit_trail(table_name=table if table else None, limit=100)
+    return render_template('historique.html', page='historique', trail=trail, filter_table=table)
+
+
+# ======================== TABLEAU DE BORD EXÉCUTIF ========================
+
+@app.route('/executif')
+@permission_required('admin')
+def executif():
+    stats = get_executive_stats()
+    return render_template('executif.html', page='executif', s=stats)
+
+@app.route('/executif/pdf')
+@permission_required('admin')
+def executif_pdf():
+    """Génère le rapport PDF mensuel exécutif."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib.colors import HexColor
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+
+    s = get_executive_stats()
+    output = os.path.join(app.config['UPLOAD_FOLDER'], 'rapport_executif.pdf')
+    os.makedirs(os.path.dirname(output), exist_ok=True)
+    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=20*mm, rightMargin=20*mm, topMargin=15*mm, bottomMargin=15*mm)
+
+    NAVY = HexColor('#1a3a5c'); ORANGE = HexColor('#e8672a')
+    s_t = ParagraphStyle('t', fontSize=20, fontName='Helvetica-Bold', textColor=NAVY, alignment=TA_CENTER)
+    s_sub = ParagraphStyle('sub', fontSize=11, alignment=TA_CENTER, textColor=HexColor('#888'))
+    s_h = ParagraphStyle('h', fontSize=14, fontName='Helvetica-Bold', textColor=NAVY, spaceBefore=12, spaceAfter=6)
+    s_n = ParagraphStyle('n', fontSize=10)
+    s_r = ParagraphStyle('r', fontSize=10, alignment=TA_RIGHT)
+    s_hd = ParagraphStyle('hd', fontSize=9, fontName='Helvetica-Bold', textColor=HexColor('#fff'))
+    s_c = ParagraphStyle('c', fontSize=9)
+    fmt = lambda x: f"{x:,.0f}"
+
+    story = []
+    story.append(Paragraph("RAPPORT EXÉCUTIF MENSUEL", s_t))
+    from datetime import datetime
+    story.append(Paragraph(f"WannyGest — {datetime.now().strftime('%B %Y')}", s_sub))
+    story.append(Spacer(1, 3*mm))
+    story.append(HRFlowable(width="100%", thickness=2, color=NAVY))
+    story.append(Spacer(1, 6*mm))
+
+    # KPIs table
+    story.append(Paragraph("Indicateurs Clés", s_h))
+    kpis = [
+        [Paragraph(h, s_hd) for h in ['Indicateur', 'Valeur']],
+        [Paragraph('Clients actifs', s_c), Paragraph(str(s['clients']), s_r)],
+        [Paragraph('Employés', s_c), Paragraph(str(s['employes']), s_r)],
+        [Paragraph('Rapports traités', s_c), Paragraph(str(s['rapports']), s_r)],
+        [Paragraph('Prospects totaux', s_c), Paragraph(str(s['prospects']), s_r)],
+        [Paragraph('Prospects gagnés', s_c), Paragraph(str(s['prospects_gagnes']), s_r)],
+    ]
+    t = Table(kpis, colWidths=[100*mm, 60*mm])
+    t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),NAVY),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
+        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
+    story.append(t)
+    story.append(Spacer(1, 6*mm))
+
+    # Finance
+    story.append(Paragraph("Finance", s_h))
+    fin = [
+        [Paragraph(h, s_hd) for h in ['Rubrique', 'Montant (FCFA)']],
+        [Paragraph('CA facturé', s_c), Paragraph(fmt(s['montant_facture']), s_r)],
+        [Paragraph('CA encaissé', s_c), Paragraph(fmt(s['montant_paye']), s_r)],
+        [Paragraph('Impayé', s_c), Paragraph(fmt(s['montant_impaye']), s_r)],
+        [Paragraph('CA devis acceptés', s_c), Paragraph(fmt(s['ca_devis']), s_r)],
+        [Paragraph('Recettes trésorerie', s_c), Paragraph(fmt(s['recettes']), s_r)],
+        [Paragraph('Dépenses', s_c), Paragraph(fmt(s['depenses']), s_r)],
+        [Paragraph('<b>Solde</b>', s_c), Paragraph(f"<b>{fmt(s['solde'])}</b>", s_r)],
+    ]
+    t2 = Table(fin, colWidths=[100*mm, 60*mm])
+    t2.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),ORANGE),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
+        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
+        ('BACKGROUND',(0,7),(-1,7),HexColor('#e8f0f5'))]))
+    story.append(t2)
+    story.append(Spacer(1, 6*mm))
+
+    # Commercial
+    story.append(Paragraph("Commercial", s_h))
+    com = [
+        [Paragraph(h, s_hd) for h in ['Métrique', 'Valeur']],
+        [Paragraph('Devis émis', s_c), Paragraph(str(s['devis_total']), s_r)],
+        [Paragraph('Devis acceptés', s_c), Paragraph(str(s['devis_acceptes']), s_r)],
+        [Paragraph('Taux conversion', s_c), Paragraph(f"{s['devis_acceptes']*100//max(s['devis_total'],1)}%", s_r)],
+        [Paragraph('Factures émises', s_c), Paragraph(str(s['factures_total']), s_r)],
+        [Paragraph('Factures payées', s_c), Paragraph(str(s['factures_payees']), s_r)],
+    ]
+    t3 = Table(com, colWidths=[100*mm, 60*mm])
+    t3.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),HexColor('#2e7d32')),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
+        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
+    story.append(t3)
+    story.append(Spacer(1, 6*mm))
+
+    # RH
+    story.append(Paragraph("Ressources Humaines", s_h))
+    rh = [
+        [Paragraph(h, s_hd) for h in ['Indicateur', 'Valeur']],
+        [Paragraph('Effectif actif', s_c), Paragraph(str(s['employes']), s_r)],
+        [Paragraph('Masse salariale mensuelle', s_c), Paragraph(fmt(s['masse_salariale']), s_r)],
+        [Paragraph('Congés en attente', s_c), Paragraph(str(s['conges_pending']), s_r)],
+        [Paragraph('Formations planifiées', s_c), Paragraph(str(s['formations']), s_r)],
+    ]
+    t4 = Table(rh, colWidths=[100*mm, 60*mm])
+    t4.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),HexColor('#7b1fa2')),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
+        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
+    story.append(t4)
+    story.append(Spacer(1, 6*mm))
+
+    # KPIs performance
+    story.append(Paragraph("Indicateurs de Performance", s_h))
+    taux_conv = s['devis_acceptes']*100//max(s['devis_total'],1)
+    taux_recouv = s['factures_payees']*100//max(s['factures_total'],1)
+    ca_client = s['montant_facture'] // max(s['clients'],1)
+    perf = [
+        [Paragraph(h, s_hd) for h in ['KPI', 'Valeur', 'Cible']],
+        [Paragraph('Taux conversion devis', s_c), Paragraph(f"{taux_conv}%", s_r), Paragraph('> 20%', s_r)],
+        [Paragraph('Taux recouvrement', s_c), Paragraph(f"{taux_recouv}%", s_r), Paragraph('> 80%', s_r)],
+        [Paragraph('CA moyen / client', s_c), Paragraph(f"{fmt(ca_client)} F", s_r), Paragraph('> 500 000 F', s_r)],
+    ]
+    t5 = Table(perf, colWidths=[80*mm, 40*mm, 40*mm])
+    t5.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),NAVY),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
+        ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
+    story.append(t5)
+
+    story.append(Spacer(1, 15*mm))
+    story.append(Paragraph(f"Document généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')} — WannyGest", ParagraphStyle('f', fontSize=8, alignment=TA_CENTER, textColor=HexColor('#999'))))
+
+    doc.build(story)
+    return send_file(output, as_attachment=True, download_name=f"Rapport_Executif_{datetime.now().strftime('%Y-%m')}.pdf")
+
+
+# ======================== MODÈLES DE DEVIS ========================
+
+@app.route('/devis/templates')
+@permission_required('proforma')
+def devis_templates_page():
+    templates = get_devis_templates()
+    return render_template('devis_templates.html', page='devis', templates=templates)
+
+@app.route('/devis/templates/add', methods=['POST'])
+@permission_required('proforma')
+def devis_templates_add():
+    from models import db_insert
+    items = []
+    designations = request.form.getlist('item_designation[]')
+    quantities = request.form.getlist('item_qty[]')
+    prices = request.form.getlist('item_price[]')
+    for d, q, p in zip(designations, quantities, prices):
+        if d.strip():
+            items.append({'designation': d, 'quantity': float(q or 1), 'unit_price': float(p or 0)})
+    db_insert('devis_templates', name=request.form['name'],
+        category=request.form.get('category', ''),
+        description=request.form.get('description', ''),
+        items_json=json.dumps(items),
+        notes=request.form.get('notes', ''),
+        created_by=session['user_id'])
+    flash("Modèle de devis créé", "success")
+    return redirect(url_for('devis_templates_page'))
+
+@app.route('/devis/from-template/<int:tid>')
+@permission_required('proforma')
+def devis_from_template(tid):
+    tpl = get_devis_template(tid)
+    if not tpl:
+        flash("Modèle non trouvé", "error"); return redirect(url_for('devis_templates_page'))
+    clients = get_all_clients()
+    return render_template('devis_from_template.html', page='devis', tpl=tpl, clients=clients,
+                          items=json.loads(tpl['items_json']) if tpl.get('items_json') else [])
 
 
 # ======================== UTILS ========================

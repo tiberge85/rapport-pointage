@@ -1,0 +1,82 @@
+{% extends "base.html" %}{% block title %}WannyGest - Modèles de devis{% endblock %}{% block content %}
+<style>
+.tpl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-bottom:20px}
+.tpl-card{background:#fff;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,0.06);overflow:hidden;transition:transform 0.2s}
+.tpl-card:hover{transform:translateY(-2px)}
+.tpl-top{padding:14px 16px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:start}
+.tpl-top h3{font-size:15px;color:#1a3a5c;margin-bottom:2px}
+.tpl-cat{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:600;background:#fff3e0;color:#e8672a}
+.tpl-body{padding:14px 16px;font-size:12px}
+.tpl-items{margin-bottom:10px}
+.tpl-item{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f8f8f8;color:#555}
+.tpl-item .qty{color:#888;font-size:11px}.tpl-item .price{font-weight:600;color:#1a3a5c}
+.tpl-total{display:flex;justify-content:space-between;padding:8px 0;font-weight:700;font-size:13px;color:#1a3a5c;border-top:2px solid #e0e0e0}
+.tpl-notes{font-size:11px;color:#888;margin-top:8px;font-style:italic}
+.tpl-actions{padding:10px 16px;border-top:1px solid #f0f0f0;display:flex;gap:6px}
+</style>
+
+<div class="page-header"><h1>📋 Modèles de devis</h1><p>Créez des modèles réutilisables pour vos devis et proformas</p></div>
+
+{% if templates %}
+<div class="tpl-grid">
+{% for t in templates %}
+<div class="tpl-card">
+    <div class="tpl-top">
+        <div><h3>{{ t.name }}</h3>{% if t.description %}<div style="font-size:11px;color:#888">{{ t.description[:60] }}</div>{% endif %}</div>
+        <span class="tpl-cat">{{ t.category or 'Général' }}</span>
+    </div>
+    <div class="tpl-body">
+        {% if t.items_json %}
+        <div class="tpl-items">
+            {% set items = t.items_json | tojson | safe %}
+            {% for item in (t.items_json if t.items_json is iterable and t.items_json is not string else []) %}
+            <div class="tpl-item">
+                <span>{{ item.designation }}{% if item.qty > 1 %} <span class="qty">×{{ item.qty }}</span>{% endif %}</span>
+                <span class="price">{{ '{:,.0f}'.format(item.price * item.qty) }} F</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% if t.total %}<div class="tpl-total"><span>Total HT</span><span>{{ '{:,.0f}'.format(t.total) }} FCFA</span></div>{% endif %}
+        {% endif %}
+        {% if t.notes %}<div class="tpl-notes">{{ t.notes[:80] }}</div>{% endif %}
+    </div>
+    <div class="tpl-actions">
+        <a href="/devis/from-template/{{ t.id }}" class="btn btn-primary btn-sm" style="flex:1;text-align:center">📝 Créer un devis</a>
+        <a href="/devis/templates/preview/{{ t.id }}" class="btn btn-outline btn-sm">👁️</a>
+    </div>
+</div>
+{% endfor %}
+</div>
+{% else %}
+<div class="card" style="margin-bottom:16px"><div class="card-body" style="text-align:center;color:#999;padding:30px">
+    📋 Aucun modèle de devis<br>Créez votre premier modèle ci-dessous.
+</div></div>
+{% endif %}
+
+<div class="card"><div class="card-header"><h3>+ Nouveau modèle</h3></div><div class="card-body">
+<form method="post" action="/devis/templates/add">
+<div class="form-row"><div class="form-group"><label>Nom du modèle *</label><input type="text" name="name" required placeholder="Ex: Vidéosurveillance 8 caméras"></div>
+<div class="form-group"><label>Catégorie</label><select name="category"><option>Vidéosurveillance</option><option>Réseau informatique</option><option>Clôture électrique</option><option>Contrôle d'accès</option><option>Alarme intrusion</option><option>Maintenance préventive</option><option>Portail automatique</option><option>Détection incendie</option><option>Autre</option></select></div></div>
+<div class="form-group"><label>Description</label><input type="text" name="description" placeholder="Description courte du modèle"></div>
+<div class="form-group"><label>Articles du modèle</label></div>
+<div id="tplItems">
+    <div style="display:grid;grid-template-columns:3fr 1fr 1fr 40px;gap:6px;margin-bottom:4px;font-size:11px;font-weight:600;color:#888"><span>Désignation</span><span>Qté</span><span>Prix unit. (F)</span><span></span></div>
+    <div class="tpl-row" style="display:grid;grid-template-columns:3fr 1fr 1fr 40px;gap:6px;margin-bottom:4px">
+        <input type="text" name="item_designation[]" placeholder="Ex: Caméra Hikvision DS-2CD..." style="padding:7px;border:1.5px solid #ddd;border-radius:6px;font-size:12px">
+        <input type="number" name="item_qty[]" value="1" min="1" style="padding:7px;border:1.5px solid #ddd;border-radius:6px;font-size:12px">
+        <input type="number" name="item_price[]" value="0" step="500" style="padding:7px;border:1.5px solid #ddd;border-radius:6px;font-size:12px">
+        <button type="button" onclick="this.parentElement.remove()" style="background:#fde8e8;border:none;border-radius:6px;cursor:pointer;color:#c53030">✕</button>
+    </div>
+</div>
+<button type="button" onclick="addTplRow()" class="btn btn-outline btn-sm" style="margin-bottom:12px">+ Ajouter un article</button>
+<div class="form-group"><label>Notes / conditions</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px" placeholder="Conditions de paiement, durée garantie, délai livraison..."></textarea></div>
+<button type="submit" class="btn btn-primary">💾 Enregistrer le modèle</button>
+</form></div></div>
+<script>
+function addTplRow(){
+    var d=document.createElement('div');d.className='tpl-row';d.style.cssText='display:grid;grid-template-columns:3fr 1fr 1fr 40px;gap:6px;margin-bottom:4px';
+    d.innerHTML='<input type="text" name="item_designation[]" style="padding:7px;border:1.5px solid #ddd;border-radius:6px;font-size:12px"><input type="number" name="item_qty[]" value="1" min="1" style="padding:7px;border:1.5px solid #ddd;border-radius:6px;font-size:12px"><input type="number" name="item_price[]" value="0" step="500" style="padding:7px;border:1.5px solid #ddd;border-radius:6px;font-size:12px"><button type="button" onclick="this.parentElement.remove()" style="background:#fde8e8;border:none;border-radius:6px;cursor:pointer;color:#c53030">✕</button>';
+    document.getElementById('tplItems').appendChild(d);
+}
+</script>
+{% endblock %}
