@@ -191,6 +191,10 @@
                 <div class="nav-section-items">
                     <a href="/comptabilite" class="{% if page == 'comptabilite' %}active{% endif %}">Factures</a>
                     <a href="/tresorerie" class="{% if page == 'tresorerie' %}active{% endif %}">Caisse / Banque</a>
+                    <a href="/caisse-sortie" class="{% if page == 'caisse_sortie' %}active{% endif %}">
+                        Sortie de caisse
+                        {% if caisse_pending %}<span class="badge">{{ caisse_pending }}</span>{% endif %}
+                    </a>
                     <a href="/depenses" class="{% if page == 'depenses' %}active{% endif %}">Dépenses</a>
                 </div>
             </div>

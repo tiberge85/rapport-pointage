@@ -1,0 +1,66 @@
+{% extends "base.html" %}{% block title %}WannyGest - Sortie de caisse{% endblock %}{% block content %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<div class="page-header"><h1>💸 Pièces de caisse — Sorties</h1>
+<div style="display:flex;gap:6px">
+    <a href="/caisse-sortie/demande" class="btn btn-orange btn-sm">+ Demande</a>
+    <a href="/caisse-sortie/rapport?month={{ month }}&format=excel" class="btn btn-outline btn-sm">📥 Excel</a>
+    <a href="/caisse-sortie/rapport?month={{ month }}&format=pdf" class="btn btn-outline btn-sm">📥 PDF</a>
+</div></div>
+
+<!-- Filter -->
+<div style="margin-bottom:14px"><form method="get" style="display:flex;gap:8px;align-items:center">
+<input type="month" name="month" value="{{ month }}" style="padding:6px 10px;border:1.5px solid #ddd;border-radius:6px;font-size:13px">
+<button type="submit" class="btn btn-outline btn-sm">Filtrer</button></form></div>
+
+<!-- Stats -->
+<div class="stats-grid" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stat-card" style="border-left:4px solid #e8672a"><div class="stat-icon orange">⏳</div><div class="stat-info"><div class="stat-num">{{ stats.en_attente }}</div><div class="stat-label">En attente DG</div></div></div>
+    <div class="stat-card" style="border-left:4px solid #2e7d32"><div class="stat-icon green">✅</div><div class="stat-info"><div class="stat-num">{{ stats.valide }}</div><div class="stat-label">Validées</div></div></div>
+    <div class="stat-card" style="border-left:4px solid #c53030"><div class="stat-icon red">❌</div><div class="stat-info"><div class="stat-num">{{ stats.refuse }}</div><div class="stat-label">Refusées</div></div></div>
+    <div class="stat-card" style="border-left:4px solid #1a3a5c"><div class="stat-icon teal">💰</div><div class="stat-info"><div class="stat-num">{{ '{:,.0f}'.format(stats.montant_total) }}</div><div class="stat-label">Total décaissé (F)</div></div></div>
+</div>
+
+<!-- Chart -->
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:16px">
+<div class="card"><div class="card-header"><h3>Répartition par nature</h3></div><div class="card-body" style="height:160px"><canvas id="cNature"></canvas></div></div>
+<div class="card"><div class="card-body" style="font-size:13px;padding:16px">
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0"><span>Espèces</span><strong>{{ '{:,.0f}'.format(stats.montant_espece) }} F</strong></div>
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0"><span>Chèques</span><strong>{{ '{:,.0f}'.format(stats.montant_cheque) }} F</strong></div>
+    <div style="display:flex;justify-content:space-between;padding:6px 0"><span>Virements</span><strong>{{ '{:,.0f}'.format(stats.montant_virement) }} F</strong></div>
+</div></div>
+</div>
+
+<!-- List -->
+<div class="card"><div class="card-header"><h3>Demandes ({{ sorties|length }})</h3></div><div class="card-body">
+{% if sorties %}
+<div class="table-wrap"><table>
+<thead><tr><th>N°</th><th>Date</th><th>Bénéficiaire</th><th>Motif</th><th>Nature</th><th style="text-align:right">Montant</th><th>Demandeur</th><th>Statut</th><th>Actions</th></tr></thead>
+<tbody>{% for s in sorties %}<tr>
+<td style="font-size:11px;font-weight:600">{{ s.reference }}</td>
+<td style="font-size:11px">{{ (s.date or '')[:10] }}</td>
+<td><strong>{{ s.beneficiaire }}</strong><br><span style="font-size:10px;color:#888">{{ s.type_beneficiaire }}</span></td>
+<td style="font-size:11px">{{ (s.motif or '')[:30] }}</td>
+<td>{{ s.nature }}</td>
+<td style="text-align:right;font-weight:700;color:#c53030">{{ '{:,.0f}'.format(s.montant) }}</td>
+<td style="font-size:11px">{{ s.demandeur_name or '-' }}</td>
+<td>
+    <span class="badge-status {% if s.status=='valide' %}sent{% elif s.status=='refuse' %}{% else %}pending{% endif %}">{{ s.status }}</span>
+    {% if s.comptabilise %}<span style="font-size:9px;color:#2e7d32">📗</span>{% endif %}
+</td>
+<td style="display:flex;gap:3px;flex-wrap:wrap">
+    <a href="/caisse-sortie/{{ s.id }}/pdf" class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 6px">📥</a>
+    {% if s.status == 'en_attente' and current_user.role in ('admin','directeur') %}
+    <a href="/caisse-sortie/{{ s.id }}/valider" class="btn btn-sm" style="background:#2e7d32;color:#fff;font-size:10px;padding:2px 6px" onclick="return confirm('Valider cette sortie ?')">✅</a>
+    <a href="/caisse-sortie/{{ s.id }}/refuser" class="btn btn-sm" style="background:#c53030;color:#fff;font-size:10px;padding:2px 6px" onclick="return confirm('Refuser ?')">❌</a>
+    {% endif %}
+    {% if s.status == 'valide' and not s.comptabilise %}
+    <a href="/caisse-sortie/{{ s.id }}/comptabiliser" class="btn btn-sm" style="background:#1a3a5c;color:#fff;font-size:10px;padding:2px 6px" title="Comptabiliser">📗</a>
+    {% endif %}
+</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucune sortie de caisse ce mois</p>{% endif %}
+</div></div>
+<script>
+new Chart(document.getElementById('cNature'),{type:'doughnut',data:{labels:['Espèces','Chèques','Virements'],datasets:[{data:[{{stats.montant_espece}},{{stats.montant_cheque}},{{stats.montant_virement}}],backgroundColor:['#2e7d32','#42a5f5','#ff9800']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}});
+</script>
+{% endblock %}

@@ -1579,3 +1579,78 @@ def get_payslip_detail_v2(pid):
     d['salaire_brut'] = (d.get('base_salary',0) or 0) + (d.get('overtime_amount',0) or 0) + d['total_primes']
     d['total_retenues'] = (d.get('cnps_employee',0) or 0) + (d.get('insurance_amount',0) or 0) + (d.get('its',0) or 0) + (d.get('deductions',0) or 0) + (d.get('autres_retenues',0) or 0) + (d.get('avances',0) or 0)
     return d
+
+
+# ======================== PIÈCE DE CAISSE SORTIE ========================
+
+def migrate_caisse():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS caisse_sorties (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reference TEXT UNIQUE,
+            date TEXT,
+            beneficiaire TEXT NOT NULL,
+            type_beneficiaire TEXT DEFAULT 'particulier',
+            montant REAL NOT NULL,
+            nature TEXT DEFAULT 'espece',
+            motif TEXT,
+            status TEXT DEFAULT 'en_attente',
+            demandeur_id INTEGER,
+            demandeur_name TEXT,
+            valideur_id INTEGER,
+            valideur_name TEXT,
+            validated_at TEXT,
+            comptabilise INTEGER DEFAULT 0,
+            comptabilise_at TEXT,
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (demandeur_id) REFERENCES users(id)
+        );
+    ''')
+    conn.commit(); conn.close()
+
+def gen_caisse_ref():
+    """Génère une référence unique : S + AAAAMM + numéro séquentiel."""
+    conn = get_db()
+    now = datetime.now()
+    prefix = f"S{now.strftime('%Y%m')}"
+    last = conn.execute("SELECT reference FROM caisse_sorties WHERE reference LIKE ? ORDER BY id DESC LIMIT 1",
+                        (f"{prefix}%",)).fetchone()
+    if last:
+        num = int(last['reference'][-4:]) + 1
+    else:
+        num = 1
+    conn.close()
+    return f"{prefix}{num:04d}"
+
+def get_caisse_sorties(status=None, month=None):
+    conn = get_db()
+    q = "SELECT * FROM caisse_sorties WHERE 1=1"
+    params = []
+    if status:
+        q += " AND status=?"; params.append(status)
+    if month:
+        q += " AND strftime('%Y-%m', date)=?"; params.append(month)
+    q += " ORDER BY created_at DESC"
+    rows = conn.execute(q, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def get_caisse_stats(month=None):
+    conn = get_db()
+    s = {}
+    where = ""
+    params = []
+    if month:
+        where = " AND strftime('%Y-%m', date)=?"; params = [month]
+    s['total'] = conn.execute(f"SELECT COUNT(*) FROM caisse_sorties WHERE 1=1{where}", params).fetchone()[0]
+    s['en_attente'] = conn.execute(f"SELECT COUNT(*) FROM caisse_sorties WHERE status='en_attente'{where}", params).fetchone()[0]
+    s['valide'] = conn.execute(f"SELECT COUNT(*) FROM caisse_sorties WHERE status='valide'{where}", params).fetchone()[0]
+    s['refuse'] = conn.execute(f"SELECT COUNT(*) FROM caisse_sorties WHERE status='refuse'{where}", params).fetchone()[0]
+    s['montant_total'] = conn.execute(f"SELECT COALESCE(SUM(montant),0) FROM caisse_sorties WHERE status='valide'{where}", params).fetchone()[0]
+    s['montant_espece'] = conn.execute(f"SELECT COALESCE(SUM(montant),0) FROM caisse_sorties WHERE status='valide' AND nature='espece'{where}", params).fetchone()[0]
+    s['montant_cheque'] = conn.execute(f"SELECT COALESCE(SUM(montant),0) FROM caisse_sorties WHERE status='valide' AND nature='cheque'{where}", params).fetchone()[0]
+    s['montant_virement'] = conn.execute(f"SELECT COALESCE(SUM(montant),0) FROM caisse_sorties WHERE status='valide' AND nature='virement'{where}", params).fetchone()[0]
+    conn.close()
+    return s

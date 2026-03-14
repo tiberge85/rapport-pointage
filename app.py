@@ -74,11 +74,13 @@ from models import (init_chat_tables, get_messages, get_direct_messages,
                     migrate_v4, get_payslip_detail, get_maintenance_due,
                     migrate_v5, log_audit, get_audit_trail, get_executive_stats,
                     get_devis_templates, get_devis_template,
-                    migrate_payslip_v2, get_payslip_detail_v2)
+                    migrate_payslip_v2, get_payslip_detail_v2,
+                    migrate_caisse, gen_caisse_ref, get_caisse_sorties, get_caisse_stats)
 init_chat_tables()
 migrate_v4()
 migrate_payslip_v2()
 migrate_v5()
+migrate_caisse()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -123,7 +125,7 @@ def permission_required(perm):
 @app.context_processor
 def inject_globals():
     """Injecte les variables globales dans tous les templates."""
-    ctx = {'current_user': None, 'permissions': [], 'pending_count': 0, 'unread_messages': 0}
+    ctx = {'current_user': None, 'permissions': [], 'pending_count': 0, 'unread_messages': 0, 'caisse_pending': 0}
     if 'user_id' in session:
         user = get_user_by_id(session['user_id'])
         if user:
@@ -132,6 +134,13 @@ def inject_globals():
             ctx['pending_count'] = len(get_jobs_by_status('traite'))
             try: ctx['unread_messages'] = get_unread_count(user['id'])
             except: pass
+            if user['role'] in ('admin', 'directeur'):
+                try:
+                    from models import get_db as _gdb
+                    _c = _gdb()
+                    ctx['caisse_pending'] = _c.execute("SELECT COUNT(*) FROM caisse_sorties WHERE status='en_attente'").fetchone()[0]
+                    _c.close()
+                except: pass
     return ctx
 
 
@@ -1981,6 +1990,312 @@ def devis_from_template(tid):
     clients = get_all_clients()
     return render_template('devis_from_template.html', page='devis', tpl=tpl, clients=clients,
                           items=json.loads(tpl['items_json']) if tpl.get('items_json') else [])
+
+
+# ======================== PIÈCE DE CAISSE SORTIE ========================
+
+@app.route('/caisse-sortie')
+@login_required
+def caisse_sortie():
+    month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    sorties = get_caisse_sorties(month=month)
+    stats = get_caisse_stats(month=month)
+    return render_template('caisse_sortie.html', page='caisse_sortie', sorties=sorties, stats=stats, month=month)
+
+@app.route('/caisse-sortie/demande', methods=['GET','POST'])
+@login_required
+def caisse_demande():
+    """Tout le personnel peut faire une demande."""
+    if request.method == 'POST':
+        user = get_user_by_id(session['user_id'])
+        ref = gen_caisse_ref()
+        from models import get_db
+        conn = get_db()
+        conn.execute("""INSERT INTO caisse_sorties (reference, date, beneficiaire, type_beneficiaire,
+            montant, nature, motif, demandeur_id, demandeur_name) VALUES (?,?,?,?,?,?,?,?,?)""",
+            (ref, request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
+             request.form['beneficiaire'], request.form.get('type_beneficiaire', 'particulier'),
+             float(request.form.get('montant', 0) or 0),
+             request.form.get('nature', 'espece'), request.form.get('motif', ''),
+             session['user_id'], user['full_name'] if user else '?'))
+        conn.commit(); conn.close()
+        log_activity(session['user_id'], user['full_name'] if user else '?',
+                    'Caisse', f"Demande sortie {ref} — {float(request.form.get('montant',0)):,.0f} F", request.remote_addr)
+        flash(f"Demande de sortie de caisse {ref} envoyée au DG pour validation", "success")
+        return redirect(url_for('caisse_sortie'))
+    return render_template('caisse_demande.html', page='caisse_sortie')
+
+@app.route('/caisse-sortie/<int:sid>/valider')
+@login_required
+def caisse_valider(sid):
+    from models import get_db
+    """DG ou admin valide la demande."""
+    user = get_user_by_id(session['user_id'])
+    if not user or user['role'] not in ('admin', 'directeur'):
+        flash("Seul le DG peut valider les sorties de caisse", "error")
+        return redirect(url_for('caisse_sortie'))
+    conn = get_db()
+    conn.execute("UPDATE caisse_sorties SET status='valide', valideur_id=?, valideur_name=?, validated_at=? WHERE id=? AND status='en_attente'",
+                 (session['user_id'], user['full_name'], datetime.now().isoformat(), sid))
+    conn.commit()
+    s = conn.execute("SELECT * FROM caisse_sorties WHERE id=?", (sid,)).fetchone()
+    conn.close()
+    if s:
+        log_activity(session['user_id'], user['full_name'], 'Caisse',
+                    f"Sortie {s['reference']} validée — {s['montant']:,.0f} F", request.remote_addr)
+    flash("Sortie de caisse validée → transmise à la comptabilité", "success")
+    return redirect(url_for('caisse_sortie'))
+
+@app.route('/caisse-sortie/<int:sid>/refuser')
+@login_required
+def caisse_refuser(sid):
+    from models import get_db
+    user = get_user_by_id(session['user_id'])
+    if not user or user['role'] not in ('admin', 'directeur'):
+        flash("Seul le DG peut refuser", "error")
+        return redirect(url_for('caisse_sortie'))
+    conn = get_db()
+    conn.execute("UPDATE caisse_sorties SET status='refuse', valideur_id=?, valideur_name=?, validated_at=? WHERE id=? AND status='en_attente'",
+                 (session['user_id'], user['full_name'], datetime.now().isoformat(), sid))
+    conn.commit(); conn.close()
+    flash("Demande refusée", "info")
+    return redirect(url_for('caisse_sortie'))
+
+@app.route('/caisse-sortie/<int:sid>/comptabiliser')
+@login_required
+def caisse_comptabiliser(sid):
+    from models import get_db
+    """La comptabilité enregistre le décaissement."""
+    conn = get_db()
+    conn.execute("UPDATE caisse_sorties SET comptabilise=1, comptabilise_at=? WHERE id=? AND status='valide'",
+                 (datetime.now().isoformat(), sid))
+    # Ajouter dans la trésorerie comme dépense
+    s = conn.execute("SELECT * FROM caisse_sorties WHERE id=?", (sid,)).fetchone()
+    if s:
+        try:
+            conn.execute("INSERT INTO treasury (type, amount, description, category, created_by, created_at) VALUES (?,?,?,?,?,?)",
+                         ('depense', s['montant'], f"Sortie caisse {s['reference']} — {s['beneficiaire']} — {s['motif']}",
+                          'sortie_caisse', session.get('user_id'), datetime.now().isoformat()))
+        except: pass
+    conn.commit(); conn.close()
+    flash("Décaissement comptabilisé", "success")
+    return redirect(url_for('caisse_sortie'))
+
+@app.route('/caisse-sortie/<int:sid>/pdf')
+@login_required
+def caisse_pdf(sid):
+    from models import get_db
+    """Génère le PDF de la pièce de caisse sortie."""
+    conn = get_db()
+    s = conn.execute("SELECT * FROM caisse_sorties WHERE id=?", (sid,)).fetchone()
+    conn.close()
+    if not s: flash("Non trouvé","error"); return redirect(url_for('caisse_sortie'))
+    s = dict(s)
+    
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib.colors import HexColor
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    
+    output = os.path.join(app.config['UPLOAD_FOLDER'], f'caisse_{s["reference"]}.pdf')
+    os.makedirs(os.path.dirname(output), exist_ok=True)
+    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=20*mm, rightMargin=20*mm, topMargin=15*mm, bottomMargin=15*mm)
+    
+    NAVY = HexColor('#1a3a5c'); RED = HexColor('#c53030')
+    s_t = ParagraphStyle('t', fontSize=18, fontName='Helvetica-Bold', textColor=NAVY, alignment=TA_CENTER)
+    s_ref = ParagraphStyle('ref', fontSize=12, fontName='Helvetica-Bold', alignment=TA_RIGHT, textColor=RED)
+    s_n = ParagraphStyle('n', fontSize=11, leading=14)
+    s_b = ParagraphStyle('b', fontSize=11, fontName='Helvetica-Bold')
+    s_c = ParagraphStyle('c', fontSize=10)
+    s_r = ParagraphStyle('r', fontSize=10, alignment=TA_RIGHT)
+    s_h = ParagraphStyle('h', fontSize=10, fontName='Helvetica-Bold', textColor=HexColor('#fff'))
+    
+    story = []
+    # Header
+    story.append(Paragraph("PIÈCE DE CAISSE SORTIE", s_t))
+    story.append(Paragraph(f"N° {s['reference']}", s_ref))
+    story.append(Spacer(1, 3*mm))
+    story.append(HRFlowable(width="100%", thickness=2, color=NAVY))
+    story.append(Spacer(1, 5*mm))
+    
+    # Date + lieu
+    story.append(Paragraph(f"ABIDJAN le {s.get('date','') or ''}", ParagraphStyle('d', fontSize=11, alignment=TA_CENTER)))
+    story.append(Spacer(1, 6*mm))
+    
+    # Info table
+    typ = '☑' if s['type_beneficiaire']=='entreprise' else '☐'
+    typ2 = '☑' if s['type_beneficiaire']=='particulier' else '☐'
+    typ3 = '☑' if s['type_beneficiaire'] not in ('entreprise','particulier') else '☐'
+    
+    info = [
+        [Paragraph("<b>A l'ordre de :</b>", s_b), Paragraph(f"<b>{s['beneficiaire']}</b>", s_b)],
+        [Paragraph(f"Entreprise: {typ}     Particulier: {typ2}     Autres: {typ3}", s_c), Paragraph('', s_c)],
+    ]
+    it = Table(info, colWidths=[85*mm, 85*mm])
+    it.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,HexColor('#ccc')),
+        ('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),('LEFTPADDING',(0,0),(-1,-1),8)]))
+    story.append(it)
+    story.append(Spacer(1, 4*mm))
+    
+    # Montant + Nature + Motif
+    nature = s.get('nature','espece')
+    ch = '...........' if nature!='cheque' else f" N°{s.get('notes','')}"
+    vi = '...........' if nature!='virement' else f" ✓"
+    es = '...........' if nature!='espece' else f" ✓"
+    
+    details = [
+        [Paragraph(h, s_h) for h in ['Rubrique', 'Détail']],
+        [Paragraph('<b>MONTANT</b>', s_c), Paragraph(f"<b>{s['montant']:,.0f} FCFA</b>", ParagraphStyle('m', fontSize=14, fontName='Helvetica-Bold', textColor=RED))],
+        [Paragraph('<b>NATURE</b>', s_c), Paragraph(f"Chèque {ch}     Virement {vi}     Espèce {es}", s_c)],
+        [Paragraph('<b>MOTIF</b>', s_c), Paragraph(s.get('motif','') or '-', s_n)],
+    ]
+    dt = Table(details, colWidths=[40*mm, 130*mm])
+    dt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),NAVY),('GRID',(0,0),(-1,-1),0.5,HexColor('#ccc')),
+        ('TOPPADDING',(0,0),(-1,-1),8),('BOTTOMPADDING',(0,0),(-1,-1),8),('LEFTPADDING',(0,0),(-1,-1),8)]))
+    story.append(dt)
+    story.append(Spacer(1, 8*mm))
+    
+    # Status
+    if s['status'] == 'valide':
+        story.append(Paragraph(f"✅ Validé par {s.get('valideur_name','')} le {(s.get('validated_at','') or '')[:10]}", ParagraphStyle('st', fontSize=10, textColor=HexColor('#2e7d32'))))
+    elif s['status'] == 'refuse':
+        story.append(Paragraph(f"❌ Refusé par {s.get('valideur_name','')}", ParagraphStyle('st', fontSize=10, textColor=RED)))
+    story.append(Spacer(1, 10*mm))
+    
+    # Signatures
+    sig = [[Paragraph("<b>Bénéficiaire</b>", ParagraphStyle('s1', fontSize=10, alignment=TA_CENTER)),
+            Paragraph("<b>Caisse</b>", ParagraphStyle('s2', fontSize=10, alignment=TA_CENTER)),
+            Paragraph("<b>Autorisation</b>", ParagraphStyle('s3', fontSize=10, alignment=TA_CENTER))]]
+    st = Table(sig, colWidths=[57*mm, 57*mm, 57*mm])
+    st.setStyle(TableStyle([('LINEABOVE',(0,0),(-1,0),1,HexColor('#000')),
+        ('TOPPADDING',(0,0),(-1,-1),6)]))
+    story.append(st)
+    story.append(Spacer(1, 20*mm))
+    story.append(Paragraph("WannyGest — Pièce de caisse générée automatiquement", ParagraphStyle('f', fontSize=7, alignment=TA_CENTER, textColor=HexColor('#999'))))
+    
+    doc.build(story)
+    return send_file(output, as_attachment=True, download_name=f"Caisse_{s['reference']}.pdf")
+
+@app.route('/caisse-sortie/rapport')
+@login_required
+def caisse_rapport():
+    """Rapport mensuel Excel + PDF."""
+    month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    fmt = request.args.get('format', 'excel')
+    sorties = get_caisse_sorties(status='valide', month=month)
+    stats = get_caisse_stats(month=month)
+    
+    if fmt == 'pdf':
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import mm
+        from reportlab.lib.colors import HexColor
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+        
+        output = os.path.join(app.config['UPLOAD_FOLDER'], f'rapport_caisse_{month}.pdf')
+        os.makedirs(os.path.dirname(output), exist_ok=True)
+        doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=12*mm, bottomMargin=12*mm)
+        NAVY = HexColor('#1a3a5c')
+        s_t = ParagraphStyle('t', fontSize=16, fontName='Helvetica-Bold', textColor=NAVY, alignment=TA_CENTER)
+        s_s = ParagraphStyle('s', fontSize=10, alignment=TA_CENTER, textColor=HexColor('#888'))
+        s_h = ParagraphStyle('h', fontSize=8, fontName='Helvetica-Bold', textColor=HexColor('#fff'))
+        s_c = ParagraphStyle('c', fontSize=8)
+        s_r = ParagraphStyle('r', fontSize=8, alignment=TA_RIGHT)
+        s_rb = ParagraphStyle('rb', fontSize=9, fontName='Helvetica-Bold', alignment=TA_RIGHT)
+        fmt_n = lambda x: f"{x:,.0f}"
+        
+        story = []
+        story.append(Paragraph(f"RAPPORT DES SORTIES DE CAISSE", s_t))
+        story.append(Paragraph(f"Période : {month}", s_s))
+        story.append(Spacer(1, 3*mm))
+        story.append(HRFlowable(width="100%", thickness=2, color=NAVY))
+        story.append(Spacer(1, 5*mm))
+        
+        # Summary
+        summary = [
+            [Paragraph(h, s_h) for h in ['Total validé', 'Espèces', 'Chèques', 'Virements', 'Nb opérations']],
+            [Paragraph(f"<b>{fmt_n(stats['montant_total'])}</b>", s_rb),
+             Paragraph(fmt_n(stats['montant_espece']), s_r),
+             Paragraph(fmt_n(stats['montant_cheque']), s_r),
+             Paragraph(fmt_n(stats['montant_virement']), s_r),
+             Paragraph(str(stats['valide']), s_r)],
+        ]
+        st = Table(summary, colWidths=[36*mm]*5)
+        st.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),NAVY),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
+            ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
+        story.append(st)
+        story.append(Spacer(1, 6*mm))
+        
+        # Detail
+        rows = [[Paragraph(h, s_h) for h in ['N°', 'Date', 'Bénéficiaire', 'Motif', 'Nature', 'Montant']]]
+        for s_item in sorties:
+            rows.append([Paragraph(s_item['reference'], s_c), Paragraph(s_item.get('date','')[:10], s_c),
+                Paragraph(s_item['beneficiaire'], s_c), Paragraph((s_item.get('motif','') or '')[:30], s_c),
+                Paragraph(s_item.get('nature',''), s_c), Paragraph(fmt_n(s_item['montant']), s_r)])
+        rows.append([Paragraph('', s_c)]*4 + [Paragraph('<b>TOTAL</b>', s_c), Paragraph(f"<b>{fmt_n(stats['montant_total'])} FCFA</b>", s_rb)])
+        
+        dt = Table(rows, colWidths=[28*mm, 20*mm, 40*mm, 35*mm, 20*mm, 27*mm])
+        dt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),NAVY),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
+            ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
+            ('BACKGROUND',(0,-1),(-1,-1),HexColor('#f0f4f8'))]))
+        story.append(dt)
+        
+        story.append(Spacer(1, 15*mm))
+        story.append(Paragraph(f"Généré le {datetime.now().strftime('%d/%m/%Y')} — WannyGest", ParagraphStyle('f', fontSize=7, alignment=TA_CENTER, textColor=HexColor('#999'))))
+        doc.build(story)
+        return send_file(output, as_attachment=True, download_name=f"Rapport_Caisse_{month}.pdf")
+    
+    else:  # Excel
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = f"Sorties Caisse {month}"
+        
+        # Header
+        ws.merge_cells('A1:F1')
+        ws['A1'] = f"RAPPORT DES SORTIES DE CAISSE — {month}"
+        ws['A1'].font = Font(bold=True, size=14, color="1A3A5C")
+        ws['A1'].alignment = Alignment(horizontal='center')
+        
+        # Summary
+        ws['A3'] = 'Total validé'; ws['B3'] = stats['montant_total']
+        ws['C3'] = 'Espèces'; ws['D3'] = stats['montant_espece']
+        ws['E3'] = 'Opérations'; ws['F3'] = stats['valide']
+        for cell in ws[3]:
+            cell.font = Font(bold=True)
+        
+        # Headers
+        headers = ['Référence', 'Date', 'Bénéficiaire', 'Motif', 'Nature', 'Montant (FCFA)']
+        for i, h in enumerate(headers, 1):
+            cell = ws.cell(row=5, column=i, value=h)
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill(start_color="1A3A5C", end_color="1A3A5C", patternType="solid")
+        
+        # Data
+        for row_idx, s_item in enumerate(sorties, 6):
+            ws.cell(row=row_idx, column=1, value=s_item['reference'])
+            ws.cell(row=row_idx, column=2, value=s_item.get('date',''))
+            ws.cell(row=row_idx, column=3, value=s_item['beneficiaire'])
+            ws.cell(row=row_idx, column=4, value=s_item.get('motif',''))
+            ws.cell(row=row_idx, column=5, value=s_item.get('nature',''))
+            ws.cell(row=row_idx, column=6, value=s_item['montant'])
+        
+        # Total row
+        total_row = len(sorties) + 6
+        ws.cell(row=total_row, column=5, value='TOTAL').font = Font(bold=True)
+        ws.cell(row=total_row, column=6, value=stats['montant_total']).font = Font(bold=True, color="C53030")
+        
+        for col in range(1, 7):
+            ws.column_dimensions[chr(64+col)].width = 18
+        
+        output = os.path.join(app.config['UPLOAD_FOLDER'], f'rapport_caisse_{month}.xlsx')
+        os.makedirs(os.path.dirname(output), exist_ok=True)
+        wb.save(output)
+        return send_file(output, as_attachment=True, download_name=f"Rapport_Caisse_{month}.xlsx")
 
 
 # ======================== UTILS ========================

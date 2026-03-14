@@ -39,6 +39,11 @@
 </div>
 
 <!-- Notifications & Announcements -->
+{% if caisse_pending and user_role in ('admin',) %}
+<div class="card" style="border-left:4px solid #c53030;margin-bottom:16px"><div class="card-header"><h3 style="color:#c53030">💸 Sorties de caisse en attente ({{ caisse_pending }})</h3>
+<a href="/caisse-sortie" class="btn btn-sm" style="background:#c53030;color:#fff">Voir et valider →</a></div></div>
+{% endif %}
+
 {% if announcements %}
 <div class="card" style="border-left:4px solid #e8672a"><div class="card-header"><h3>📢 Annonces</h3></div><div class="card-body">
 {% for a in announcements[:3] %}<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:13px">
