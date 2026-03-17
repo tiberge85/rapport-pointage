@@ -1697,6 +1697,14 @@ def migrate_v6():
             comptabilise INTEGER DEFAULT 0,
             created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS calls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            caller_id INTEGER, callee_id INTEGER,
+            room TEXT, call_type TEXT DEFAULT 'audio',
+            status TEXT DEFAULT 'ringing',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            ended_at TEXT
+        );
     ''')
     # Enrich clients table
     new_cols = [

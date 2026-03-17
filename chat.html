@@ -71,7 +71,13 @@ setInterval(function(){
     .then(r=>r.json()).then(msgs=>{
         var html='';msgs.forEach(function(m){
             var mine=m.sender_id=={{ current_user.id }};
-            html+='<div class="msg'+(mine?' mine':'')+'"><div class="msg-avatar">'+m.sender.substr(0,2).toUpperCase()+'</div><div><div class="msg-bubble">'+m.content+'</div><div class="msg-meta">'+m.sender+' · '+m.time+'</div></div></div>';
+            var isCall = m.content.indexOf('Rejoindre:') > -1;
+            var bubble = m.content;
+            if(isCall){
+                var url = m.content.split('Rejoindre: ')[1];
+                if(url) bubble = m.content.split('Rejoindre:')[0] + '<br><a href="'+url+'" target="_blank" style="color:'+(mine?'#B8860B':'#1a7a6d')+';font-weight:700;text-decoration:underline">🔗 Rejoindre l\'appel</a>';
+            }
+            html+='<div class="msg'+(mine?' mine':'')+'"><div class="msg-avatar">'+m.sender.substr(0,2).toUpperCase()+'</div><div><div class="msg-bubble">'+bubble+'</div><div class="msg-meta">'+m.sender+' · '+m.time+'</div></div></div>';
         });
         if(html)document.getElementById('chatMsgs').innerHTML=html;
         c.scrollTop=c.scrollHeight;
@@ -79,15 +85,31 @@ setInterval(function(){
 }, 5000);
 
 function startCall(withVideo) {
-    var room = 'wannygest-{{ channel }}-' + Date.now();
-    var url = 'https://meet.jit.si/' + room;
-    // Send call link in chat
-    fetch('/chat/send', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body:'channel={{ channel }}&content=' + encodeURIComponent((withVideo ? '📹' : '📞') + ' Appel en cours — Rejoindre: ' + url)
+    {% if dm_target %}
+    var targetId = {{ dm_target.id }};
+    {% else %}
+    // Channel call — notify all users in the channel
+    var targetId = 0;
+    {% endif %}
+    
+    var type = withVideo ? 'video' : 'audio';
+    var formData = new FormData();
+    formData.append('target_id', targetId);
+    formData.append('type', type);
+    
+    fetch('/call/start', {method:'POST', body: formData})
+    .then(r=>r.json()).then(function(data){
+        if(data.url){
+            // Send message in chat
+            var emoji = withVideo ? '📹' : '📞';
+            fetch('/chat/send', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+                body:'channel={{ channel }}&content=' + encodeURIComponent(emoji + ' Appel ' + type + ' en cours — Rejoindre: ' + data.url)
+            });
+            // Open Jitsi in new tab (no popup blocking)
+            var config = '#config.startWithVideoMuted=' + (withVideo ? 'false' : 'true') + '&config.prejoinPageEnabled=false&config.disableDeepLinking=true';
+            window.open(data.url + config, '_blank');
+        }
     });
-    // Open call
-    var w = window.open('', 'wannygest_call', 'width=800,height=600');
-    w.document.write('<html><head><title>WannyGest Call</title></head><body style="margin:0"><iframe src="'+url+'#config.startWithVideoMuted='+(withVideo?'false':'true')+'" style="width:100%;height:100%;border:none" allow="camera;microphone;display-capture"></iframe></body></html>');
 }
 </script>
 {% endblock %}

@@ -322,7 +322,61 @@
             }
         }).catch(function(){});
     }, 8000);
+    
+    // ======================== INCOMING CALL DETECTION ========================
+    var callCheckInterval = setInterval(function(){
+        fetch('/call/check').then(function(r){return r.json()}).then(function(data){
+            var banner = document.getElementById('callBanner');
+            if(data.incoming){
+                document.getElementById('callCallerName').textContent = data.caller;
+                document.getElementById('callType').textContent = data.type === 'video' ? '📹 Appel vidéo' : '📞 Appel audio';
+                banner.dataset.callId = data.call_id;
+                banner.dataset.url = data.url;
+                banner.style.display = 'flex';
+                // Play ringtone
+                try{
+                    if(!window._ringAudio){
+                        window._ringAudio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1rZ2JoZmpxfYOEhoSBe3V0d39/fH17eHZ4fYCBhIWDfnp3d3d3eXt+goaIh4N+eXV0dXh8gIWJi4mFf3l0cXJ1en+FioyLiIN8dnFxdHl/hYuNjIiCe3VxcXR5gIaLjYyHgXt1cXF0eYCGjI6Mh4F7dXBxdHqAh42PjYeCfHVwcHN5gIiOj42HgXt0cHBzeYGIjpCOiIJ8dXBwc3mBiI+QjoiCfHVwcHN5gYmQkY+IgXt0b3B0eoKKkZGPiIF7dG9vc3qCipKSkI+IgHpzbm9zeoKLk5KQj4d/eXJubnJ5gYuTk5GPh395cm1ucnmBi5SUkY+Hf3lybi4=');
+                        window._ringAudio.loop = true;
+                    }
+                    window._ringAudio.play().catch(function(){});
+                }catch(e){}
+            } else {
+                banner.style.display = 'none';
+                if(window._ringAudio){try{window._ringAudio.pause();window._ringAudio.currentTime=0}catch(e){}}
+            }
+        }).catch(function(){});
+    }, 3000);
+    
+    function acceptCall(){
+        var banner = document.getElementById('callBanner');
+        var cid = banner.dataset.callId;
+        if(window._ringAudio){try{window._ringAudio.pause()}catch(e){}}
+        fetch('/call/'+cid+'/accept').then(function(r){return r.json()}).then(function(data){
+            banner.style.display = 'none';
+            if(data.url) window.open(data.url, '_blank');
+        });
+    }
+    function rejectCall(){
+        var banner = document.getElementById('callBanner');
+        var cid = banner.dataset.callId;
+        if(window._ringAudio){try{window._ringAudio.pause()}catch(e){}}
+        fetch('/call/'+cid+'/reject');
+        banner.style.display = 'none';
+    }
     </script>
+    
+    <!-- Incoming call banner -->
+    <div id="callBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#1a7a6d,#0d6b5e);color:#fff;padding:16px 24px;display:none;align-items:center;justify-content:center;gap:16px;box-shadow:0 4px 20px rgba(0,0,0,0.3);animation:callPulse 1.5s infinite">
+        <div style="font-size:20px" id="callType">📞 Appel audio</div>
+        <div style="font-weight:700;font-size:16px"><span id="callCallerName"></span> vous appelle...</div>
+        <button onclick="acceptCall()" style="background:#4caf50;color:#fff;border:none;padding:10px 24px;border-radius:20px;font-size:14px;font-weight:700;cursor:pointer;animation:btnPulse 1s infinite">✅ Décrocher</button>
+        <button onclick="rejectCall()" style="background:#ef5350;color:#fff;border:none;padding:10px 24px;border-radius:20px;font-size:14px;font-weight:700;cursor:pointer">❌ Refuser</button>
+    </div>
+    <style>
+    @keyframes callPulse{0%,100%{opacity:1}50%{opacity:0.85}}
+    @keyframes btnPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+    </style>
     {% endif %}
 </body>
 </html>

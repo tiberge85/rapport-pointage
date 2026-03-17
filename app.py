@@ -1743,6 +1743,77 @@ def chat_api():
                      'content': m['content'], 'time': m['created_at'][11:16]} for m in msgs])
 
 
+# ======================== APPELS AUDIO/VIDEO ========================
+
+@app.route('/call/start', methods=['POST'])
+@login_required
+def call_start():
+    """Initier un appel."""
+    target_id = int(request.form.get('target_id', 0))
+    call_type = request.form.get('type', 'audio')
+    caller = get_user_by_id(session['user_id'])
+    room = f"wannygest-{session['user_id']}-{target_id}-{int(datetime.now().timestamp())}"
+    
+    conn = _gdb()
+    conn.execute("DELETE FROM calls WHERE caller_id=? AND status='ringing'", (session['user_id'],))
+    conn.execute("""INSERT INTO calls (caller_id, callee_id, room, call_type, status)
+        VALUES (?, ?, ?, ?, 'ringing')""",
+        (session['user_id'], target_id, room, call_type))
+    conn.commit(); conn.close()
+    
+    return jsonify({'room': room, 'url': f'https://meet.jit.si/{room}'})
+
+@app.route('/call/check')
+@login_required
+def call_check():
+    """Vérifie si un appel entrant est en cours (polling)."""
+    conn = _gdb()
+    call = conn.execute("""SELECT c.*, u.full_name as caller_name FROM calls c
+        JOIN users u ON c.caller_id=u.id
+        WHERE c.callee_id=? AND c.status='ringing'
+        ORDER BY c.created_at DESC LIMIT 1""", (session['user_id'],)).fetchone()
+    conn.close()
+    if call:
+        return jsonify({
+            'incoming': True,
+            'call_id': call['id'],
+            'caller': call['caller_name'],
+            'type': call['call_type'],
+            'room': call['room'],
+            'url': f"https://meet.jit.si/{call['room']}"
+        })
+    return jsonify({'incoming': False})
+
+@app.route('/call/<int:cid>/accept')
+@login_required
+def call_accept(cid):
+    conn = _gdb()
+    call = conn.execute("SELECT * FROM calls WHERE id=? AND callee_id=?", (cid, session['user_id'])).fetchone()
+    if call:
+        conn.execute("UPDATE calls SET status='active' WHERE id=?", (cid,))
+        conn.commit()
+        conn.close()
+        return jsonify({'url': f"https://meet.jit.si/{call['room']}", 'room': call['room']})
+    conn.close()
+    return jsonify({'error': 'Appel non trouvé'}), 404
+
+@app.route('/call/<int:cid>/reject')
+@login_required
+def call_reject(cid):
+    conn = _gdb()
+    conn.execute("UPDATE calls SET status='rejected' WHERE id=? AND callee_id=?", (cid, session['user_id']))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/call/<int:cid>/end')
+@login_required
+def call_end(cid):
+    conn = _gdb()
+    conn.execute("UPDATE calls SET status='ended', ended_at=CURRENT_TIMESTAMP WHERE id=?", (cid,))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+
 # ======================== RH EXPANDED ========================
 
 @app.route('/rh/postes')
