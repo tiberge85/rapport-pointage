@@ -67,7 +67,6 @@
             <a href="#features">Fonctionnalités</a>
             <a href="#solutions">Solutions</a>
             <a href="#support">Support</a>
-            <a href="/register">Créer un compte</a>
             <a href="/login" class="btn-nav">Se connecter</a>
         </div>
     </nav>
@@ -79,8 +78,7 @@
             <p>WannyGest est une plateforme intelligente qui centralise la gestion des heures de travail, des rapports techniques, de la facturation et des ressources humaines dans une seule interface.</p>
             {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for cat, msg in messages %}<div class="flash">{{ msg }}</div>{% endfor %}{% endif %}{% endwith %}
             <div class="hero-actions">
-                <a href="/register" class="btn-hero btn-start">Commencer maintenant</a>
-                <a href="/login" class="btn-hero btn-login-hero">🔐 Se connecter</a>
+                <a href="/login" class="btn-hero btn-start">🔐 Se connecter</a>
             </div>
         </div>
         <div class="hero-img">

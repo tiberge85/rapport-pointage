@@ -219,7 +219,13 @@ def login():
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
+@login_required
 def register():
+    # Only admin can create users
+    u = get_user_by_id(session['user_id'])
+    if u['role'] not in ('admin', 'dg'):
+        flash("Seul l'administrateur peut créer des comptes", "error")
+        return redirect('/dashboard')
     if request.method == 'POST':
         pwd = request.form['password']
         pwd2 = request.form['password2']
@@ -229,13 +235,14 @@ def register():
         if len(pwd) < 6:
             flash("Le mot de passe doit faire au moins 6 caractères", "error")
             return render_template('register.html')
+        role = request.form.get('role', 'technicien')
         ok, msg = create_user(
             request.form['username'], request.form['email'],
-            pwd, request.form['full_name'], 'technicien'
+            pwd, request.form['full_name'], role
         )
         if ok:
-            flash("Compte créé ! Vous pouvez vous connecter.", "success")
-            return redirect(url_for('login'))
+            flash(f"Compte '{request.form['username']}' créé avec le rôle {role} !", "success")
+            return redirect('/admin')
         flash(msg, "error")
     return render_template('register.html')
 
