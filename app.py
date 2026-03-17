@@ -70,7 +70,7 @@ from models import init_mg_tables
 init_mg_tables()
 
 from models import (init_chat_tables, get_messages, get_direct_messages, 
-                    send_message, get_unread_count, db_get_all,
+                    send_message, get_unread_count, mark_chat_read, db_get_all,
                     migrate_v4, get_payslip_detail, get_maintenance_due,
                     migrate_v5, log_audit, get_audit_trail, get_executive_stats,
                     get_devis_templates, get_devis_template,
@@ -1708,9 +1708,11 @@ def chat_page():
     if dm_user:
         msgs = get_direct_messages(session['user_id'], int(dm_user))
         target = get_user_by_id(int(dm_user))
+        mark_chat_read(session['user_id'], '_dm_all')
         return render_template('chat.html', page='chat', messages=msgs, users=users,
                               channel=f'dm_{dm_user}', dm_target=target)
     msgs = get_messages(channel)
+    mark_chat_read(session['user_id'], channel)
     return render_template('chat.html', page='chat', messages=msgs, users=users,
                           channel=channel, dm_target=None)
 
@@ -1728,6 +1730,13 @@ def chat_send():
     if dm_id:
         return redirect(f'/chat?dm={dm_id}')
     return redirect(f'/chat?channel={channel}')
+
+@app.route('/chat/unread')
+@login_required
+def chat_unread_api():
+    """API: nombre de messages non lus."""
+    count = get_unread_count(session['user_id'])
+    return jsonify({'unread': count})
 
 @app.route('/chat/api')
 @login_required

@@ -303,22 +303,32 @@
     </div>
     <script>
     // Real-time notification polling (every 8s)
-    var lastMsgCount = {{ unread_messages or 0 }};
     setInterval(function(){
-        fetch('/chat/api?channel=general').then(r=>r.json()).then(msgs=>{
-            var newCount = msgs.length;
+        // Get unread count from server
+        fetch('/chat/unread').then(r=>r.json()).then(function(data){
             var badge = document.getElementById('chatBadge');
-            if(newCount > lastMsgCount && lastMsgCount > 0){
-                // Show toast notification
-                var last = msgs[msgs.length-1];
-                document.getElementById('ntTitle').textContent = '💬 ' + last.sender;
-                document.getElementById('ntMsg').textContent = last.content.substring(0,80);
-                var toast = document.getElementById('notifToast');
-                toast.style.display = 'block';
-                setTimeout(function(){toast.style.display='none'},5000);
-                // Update badge
-                badge.textContent = newCount - lastMsgCount;
+            var count = data.unread || 0;
+            if(count > 0){
+                badge.textContent = count;
                 badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }).catch(function(){});
+        
+        // Check for new messages for toast notification
+        fetch('/chat/api?channel=general').then(r=>r.json()).then(function(msgs){
+            if(msgs.length > 0){
+                var last = msgs[msgs.length-1];
+                var lastShown = localStorage.getItem('wg_last_notif_id') || '0';
+                if(last.id > parseInt(lastShown) && last.sender_id !== {{ current_user.id }}){
+                    document.getElementById('ntTitle').textContent = '💬 ' + last.sender;
+                    document.getElementById('ntMsg').textContent = last.content.substring(0,80);
+                    var toast = document.getElementById('notifToast');
+                    toast.style.display = 'block';
+                    setTimeout(function(){toast.style.display='none'},5000);
+                    localStorage.setItem('wg_last_notif_id', last.id.toString());
+                }
             }
         }).catch(function(){});
     }, 8000);

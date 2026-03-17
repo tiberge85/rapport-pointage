@@ -1368,10 +1368,63 @@ def send_message(sender_id, content, channel='general', receiver_id=None):
     conn.commit(); conn.close()
 
 def get_unread_count(user_id):
+    """Compte les messages non lus : DMs + canaux depuis la dernière lecture."""
     conn = get_db()
-    c = conn.execute("SELECT COUNT(*) FROM messages WHERE receiver_id=? AND read=0", (user_id,)).fetchone()[0]
+    # Ensure chat_last_read table exists
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS chat_last_read (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, channel TEXT,
+            last_read_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, channel))""")
+        conn.commit()
+    except: pass
+    
+    total = 0
+    # Unread DMs (messages sent TO this user, not by this user, after last read)
+    last_dm = conn.execute("SELECT last_read_at FROM chat_last_read WHERE user_id=? AND channel='_dm_all'",
+        (user_id,)).fetchone()
+    if last_dm:
+        total += conn.execute("""SELECT COUNT(*) FROM messages WHERE receiver_id=? AND sender_id!=? 
+            AND created_at>?""", (user_id, user_id, last_dm['last_read_at'])).fetchone()[0]
+    else:
+        total += conn.execute("SELECT COUNT(*) FROM messages WHERE receiver_id=? AND sender_id!=?",
+            (user_id, user_id)).fetchone()[0]
+    
+    # Unread channel messages (not sent by this user, after last read)
+    for ch in ['general', 'technique', 'commercial']:
+        last_ch = conn.execute("SELECT last_read_at FROM chat_last_read WHERE user_id=? AND channel=?",
+            (user_id, ch)).fetchone()
+        if last_ch:
+            total += conn.execute("""SELECT COUNT(*) FROM messages WHERE channel=? AND sender_id!=? 
+                AND receiver_id IS NULL AND created_at>?""",
+                (ch, user_id, last_ch['last_read_at'])).fetchone()[0]
+        else:
+            total += conn.execute("""SELECT COUNT(*) FROM messages WHERE channel=? AND sender_id!=? 
+                AND receiver_id IS NULL""", (ch, user_id)).fetchone()[0]
+    
     conn.close()
-    return c
+    return total
+
+def mark_chat_read(user_id, channel):
+    """Marque un canal ou les DMs comme lus pour cet utilisateur."""
+    conn = get_db()
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS chat_last_read (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, channel TEXT,
+            last_read_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, channel))""")
+        conn.commit()
+    except: pass
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        conn.execute("INSERT INTO chat_last_read (user_id, channel, last_read_at) VALUES (?, ?, ?)",
+            (user_id, channel, now))
+    except:
+        conn.execute("UPDATE chat_last_read SET last_read_at=? WHERE user_id=? AND channel=?",
+            (now, user_id, channel))
+    conn.commit(); conn.close()
 
 
 # ======================== MIGRATIONS V4 ========================
