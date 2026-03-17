@@ -88,28 +88,31 @@ function startCall(withVideo) {
     {% if dm_target %}
     var targetId = {{ dm_target.id }};
     {% else %}
-    // Channel call — notify all users in the channel
     var targetId = 0;
     {% endif %}
     
     var type = withVideo ? 'video' : 'audio';
+    
+    // Generate room name client-side to avoid popup blocking
+    var room = 'wannygest-{{ current_user.id }}-' + targetId + '-' + Date.now();
+    var jitsiUrl = 'https://meet.jit.si/' + room;
+    var config = '#config.startWithVideoMuted=' + (withVideo ? 'false' : 'true') + '&config.prejoinPageEnabled=false&config.disableDeepLinking=true';
+    
+    // Open Jitsi IMMEDIATELY in click context (before any async call)
+    window.open(jitsiUrl + config, '_blank');
+    
+    // Then notify server + send chat message (fire and forget)
     var formData = new FormData();
     formData.append('target_id', targetId);
     formData.append('type', type);
+    formData.append('room', room);
     
-    fetch('/call/start', {method:'POST', body: formData})
-    .then(r=>r.json()).then(function(data){
-        if(data.url){
-            // Send message in chat
-            var emoji = withVideo ? '📹' : '📞';
-            fetch('/chat/send', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-                body:'channel={{ channel }}&content=' + encodeURIComponent(emoji + ' Appel ' + type + ' en cours — Rejoindre: ' + data.url)
-            });
-            // Open Jitsi in new tab (no popup blocking)
-            var config = '#config.startWithVideoMuted=' + (withVideo ? 'false' : 'true') + '&config.prejoinPageEnabled=false&config.disableDeepLinking=true';
-            window.open(data.url + config, '_blank');
-        }
-    });
+    fetch('/call/start', {method:'POST', body: formData}).catch(function(){});
+    
+    var emoji = withVideo ? '📹' : '📞';
+    fetch('/chat/send', {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:'channel={{ channel }}&content=' + encodeURIComponent(emoji + ' Appel ' + type + ' en cours — Rejoindre: ' + jitsiUrl)
+    }).catch(function(){});
 }
 </script>
 {% endblock %}

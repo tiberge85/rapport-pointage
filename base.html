@@ -361,23 +361,31 @@
     function acceptCall(){
         var banner = document.getElementById('callBanner');
         var cid = banner.dataset.callId;
-        if(window._ringAudio){try{window._ringAudio.pause()}catch(e){}}
-        fetch('/call/'+cid+'/accept').then(function(r){return r.json()}).then(function(data){
-            banner.style.display = 'none';
-            if(data.url) window.open(data.url, '_blank');
-        });
+        var url = banner.dataset.url;
+        if(window._ringAudio){try{window._ringAudio.pause();window._ringAudio.currentTime=0}catch(e){}}
+        banner.style.display = 'none';
+        
+        // IMPORTANT: Open Jitsi FIRST in the click context (before fetch)
+        // Browsers block window.open inside async callbacks
+        if(url){
+            var config = '#config.prejoinPageEnabled=false&config.disableDeepLinking=true';
+            window.open(url + config, '_blank');
+        }
+        
+        // Then notify server (fire and forget)
+        fetch('/call/'+cid+'/accept').catch(function(){});
     }
     function rejectCall(){
         var banner = document.getElementById('callBanner');
         var cid = banner.dataset.callId;
-        if(window._ringAudio){try{window._ringAudio.pause()}catch(e){}}
-        fetch('/call/'+cid+'/reject');
+        if(window._ringAudio){try{window._ringAudio.pause();window._ringAudio.currentTime=0}catch(e){}}
         banner.style.display = 'none';
+        fetch('/call/'+cid+'/reject').catch(function(){});
     }
     </script>
     
     <!-- Incoming call banner -->
-    <div id="callBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#1a7a6d,#0d6b5e);color:#fff;padding:16px 24px;display:none;align-items:center;justify-content:center;gap:16px;box-shadow:0 4px 20px rgba(0,0,0,0.3);animation:callPulse 1.5s infinite">
+    <div id="callBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(135deg,#1a7a6d,#0d6b5e);color:#fff;padding:16px 24px;align-items:center;justify-content:center;gap:16px;box-shadow:0 4px 20px rgba(0,0,0,0.3);animation:callPulse 1.5s infinite">
         <div style="font-size:20px" id="callType">📞 Appel audio</div>
         <div style="font-weight:700;font-size:16px"><span id="callCallerName"></span> vous appelle...</div>
         <button onclick="acceptCall()" style="background:#4caf50;color:#fff;border:none;padding:10px 24px;border-radius:20px;font-size:14px;font-weight:700;cursor:pointer;animation:btnPulse 1s infinite">✅ Décrocher</button>

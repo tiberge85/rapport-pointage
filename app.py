@@ -1760,16 +1760,26 @@ def call_start():
     """Initier un appel."""
     target_id = int(request.form.get('target_id', 0))
     call_type = request.form.get('type', 'audio')
-    caller = get_user_by_id(session['user_id'])
-    room = f"wannygest-{session['user_id']}-{target_id}-{int(datetime.now().timestamp())}"
+    room = request.form.get('room', '') or f"wannygest-{session['user_id']}-{target_id}-{int(datetime.now().timestamp())}"
     
     conn = _gdb()
+    # Clear old ringing calls from this caller
     conn.execute("DELETE FROM calls WHERE caller_id=? AND status='ringing'", (session['user_id'],))
-    conn.execute("""INSERT INTO calls (caller_id, callee_id, room, call_type, status)
-        VALUES (?, ?, ?, ?, 'ringing')""",
-        (session['user_id'], target_id, room, call_type))
-    conn.commit(); conn.close()
     
+    if target_id > 0:
+        # Direct call to specific user
+        conn.execute("""INSERT INTO calls (caller_id, callee_id, room, call_type, status)
+            VALUES (?, ?, ?, ?, 'ringing')""",
+            (session['user_id'], target_id, room, call_type))
+    else:
+        # Channel call — ring all other users
+        users = conn.execute("SELECT id FROM users WHERE id!=?", (session['user_id'],)).fetchall()
+        for u in users:
+            conn.execute("""INSERT INTO calls (caller_id, callee_id, room, call_type, status)
+                VALUES (?, ?, ?, ?, 'ringing')""",
+                (session['user_id'], u['id'], room, call_type))
+    
+    conn.commit(); conn.close()
     return jsonify({'room': room, 'url': f'https://meet.jit.si/{room}'})
 
 @app.route('/call/check')
@@ -1777,6 +1787,11 @@ def call_start():
 def call_check():
     """Vérifie si un appel entrant est en cours (polling)."""
     conn = _gdb()
+    # Auto-expire ringing calls older than 60s
+    conn.execute("""UPDATE calls SET status='missed' 
+        WHERE status='ringing' AND created_at < datetime('now', '-60 seconds')""")
+    conn.commit()
+    
     call = conn.execute("""SELECT c.*, u.full_name as caller_name FROM calls c
         JOIN users u ON c.caller_id=u.id
         WHERE c.callee_id=? AND c.status='ringing'

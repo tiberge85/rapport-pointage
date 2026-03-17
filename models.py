@@ -1419,12 +1419,11 @@ def mark_chat_read(user_id, channel):
     except: pass
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     try:
-        conn.execute("INSERT INTO chat_last_read (user_id, channel, last_read_at) VALUES (?, ?, ?)",
+        conn.execute("INSERT OR REPLACE INTO chat_last_read (user_id, channel, last_read_at) VALUES (?, ?, ?)",
             (user_id, channel, now))
-    except:
-        conn.execute("UPDATE chat_last_read SET last_read_at=? WHERE user_id=? AND channel=?",
-            (now, user_id, channel))
-    conn.commit(); conn.close()
+        conn.commit()
+    except: pass
+    conn.close()
 
 
 # ======================== MIGRATIONS V4 ========================
