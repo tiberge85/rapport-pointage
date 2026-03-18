@@ -1848,7 +1848,23 @@ def rh_organigramme():
         d = e.get('department') or 'Non assigné'
         if d not in depts: depts[d] = []
         depts[d].append(e)
-    return render_template('rh_organigramme.html', page='organigramme', depts=depts)
+    
+    # Build hierarchy levels based on position keywords
+    hierarchy = {0: [], 1: [], 2: [], 3: []}
+    level_names = {0: 'Direction Générale', 1: 'Directeurs & Chefs', 2: 'Responsables', 3: 'Équipes'}
+    for e in employees:
+        pos = (e.get('position') or '').lower()
+        if any(k in pos for k in ['dg', 'directeur général', 'pdg', 'ceo', 'gérant']):
+            hierarchy[0].append(e)
+        elif any(k in pos for k in ['directeur', 'director', 'chef de département', 'daf', 'drh', 'dsi']):
+            hierarchy[1].append(e)
+        elif any(k in pos for k in ['responsable', 'chef', 'superviseur', 'manager', 'coordinat']):
+            hierarchy[2].append(e)
+        else:
+            hierarchy[3].append(e)
+    
+    return render_template('rh_organigramme.html', page='organigramme', depts=depts,
+                          hierarchy=hierarchy, level_names=level_names)
 
 
 # ======================== CHAT ========================
@@ -2792,7 +2808,7 @@ def stock_image(filename):
 @app.route('/achats')
 @permission_required('comptabilite')
 def achats_page():
-    tab = request.args.get('tab', 'articles')
+    tab = request.args.get('tab', 'fournisseurs')
     conn = _gdb()
     from models import db_get_all
     

@@ -204,21 +204,6 @@
             </div>
             {% endif %}
             
-            {% if 'comptabilite' in permissions %}
-            <!-- Achats -->
-            <div class="nav-section" id="sec-achats">
-                <div class="nav-section-title" onclick="toggleSection('sec-achats')">🛒 ACHATS <span class="arrow">▼</span></div>
-                <div class="nav-section-items">
-                    <a href="/achats?tab=articles" class="{% if page == 'achats' and tab == 'articles' %}active{% endif %}">Articles</a>
-                    <a href="/achats?tab=fournisseurs" class="{% if page == 'achats' and tab == 'fournisseurs' %}active{% endif %}">Fournisseurs</a>
-                    <a href="/achats?tab=demandes" class="{% if page == 'achats' and tab == 'demandes' %}active{% endif %}">Demandes d'achat</a>
-                    <a href="/achats?tab=devis" class="{% if page == 'achats' and tab == 'devis' %}active{% endif %}">Devis fournisseur</a>
-                    <a href="/achats?tab=commandes" class="{% if page == 'achats' and tab == 'commandes' %}active{% endif %}">Bon de commande</a>
-                    <a href="/achats?tab=contrats" class="{% if page == 'achats' and tab == 'contrats' %}active{% endif %}">Contrats</a>
-                </div>
-            </div>
-            {% endif %}
-            
             {% if 'informatique' in permissions or 'projets' in permissions %}
             <!-- Informatique & Projets -->
             <div class="nav-section" id="sec-info">
@@ -235,16 +220,22 @@
             </div>
             {% endif %}
             
-            {% if 'moyens_generaux' in permissions or 'admin' in permissions %}
+            {% if 'moyens_generaux' in permissions or 'comptabilite' in permissions or 'admin' in permissions %}
             <!-- Moyens Généraux -->
             <div class="nav-section" id="sec-moyens">
                 <div class="nav-section-title" onclick="toggleSection('sec-moyens')">🏠 MOYENS GÉNÉRAUX <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
                     <a href="/moyens-generaux" class="{% if page == 'moyens' %}active{% endif %}">Tableau de bord</a>
-                    <a href="/stock" class="{% if page == 'stock' %}active{% endif %}">Stock</a>
+                    <a href="/stock" class="{% if page == 'stock' %}active{% endif %}">📦 Stock</a>
                     <a href="/moyens-generaux/vehicules" class="{% if page == 'vehicules' %}active{% endif %}">Parc véhicules</a>
                     <a href="/moyens-generaux/fournitures" class="{% if page == 'fournitures' %}active{% endif %}">Fournitures bureau</a>
                     <a href="/moyens-generaux/maintenance" class="{% if page == 'maintenance' %}active{% endif %}">Maintenance</a>
+                    <div style="height:1px;background:rgba(255,255,255,0.06);margin:4px 16px"></div>
+                    <a href="/achats?tab=fournisseurs" class="{% if page == 'achats' and tab == 'fournisseurs' %}active{% endif %}">🛒 Fournisseurs</a>
+                    <a href="/achats?tab=demandes" class="{% if page == 'achats' and tab == 'demandes' %}active{% endif %}">📋 Demandes d'achat</a>
+                    <a href="/achats?tab=devis" class="{% if page == 'achats' and tab == 'devis' %}active{% endif %}">📄 Devis fournisseur</a>
+                    <a href="/achats?tab=commandes" class="{% if page == 'achats' and tab == 'commandes' %}active{% endif %}">🚚 Bon de commande</a>
+                    <a href="/achats?tab=contrats" class="{% if page == 'achats' and tab == 'contrats' %}active{% endif %}">📑 Contrats</a>
                 </div>
             </div>
             {% endif %}

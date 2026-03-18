@@ -7,25 +7,13 @@
     <div class="stat-card"><div class="stat-icon" style="background:#e3f2fd;color:#1565c0">💰</div><div class="stat-info"><div class="stat-num">{{ '{:,.0f}'.format(total_commandes) }}</div><div class="stat-label">Total achats (F)</div></div></div>
 </div>
 <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
-{% for t,icon,label in [('articles','📦','Articles'),('fournisseurs','🏢','Fournisseurs'),('demandes','📋','Demandes'),('devis','📄','Devis fournisseur'),('commandes','🚚','Bon de commande'),('contrats','📑','Contrats'),('rapports','📊','Rapports'),('parametres','⚙️','Paramètres')] %}
+{% for t,icon,label in [('fournisseurs','🏢','Fournisseurs'),('demandes','📋','Demandes'),('devis','📄','Devis fournisseur'),('commandes','🚚','Bon de commande'),('contrats','📑','Contrats'),('rapports','📊','Rapports'),('parametres','⚙️','Paramètres')] %}
     <a href="/achats?tab={{ t }}" class="btn {% if tab==t %}btn-primary{% else %}btn-outline{% endif %} btn-sm">{{ icon }} {{ label }}</a>
 {% endfor %}
+<a href="/stock" class="btn btn-outline btn-sm" style="margin-left:auto">📦 Voir le stock →</a>
 </div>
 
-{% if tab == 'articles' %}
-<div class="card"><div class="card-header"><h3>📦 Articles (stock)</h3></div><div class="card-body">
-{% if stock_items %}<div class="table-wrap"><table>
-<thead><tr><th>Image</th><th>Réf</th><th>Désignation</th><th>Catégorie</th><th style="text-align:right">Stock</th><th style="text-align:right">P.U.</th></tr></thead>
-<tbody>{% for i in stock_items %}<tr>
-<td>{% if i.image %}<img src="/uploads/stock/{{ i.image }}" style="width:36px;height:36px;object-fit:cover;border-radius:4px">{% else %}<div style="width:36px;height:36px;background:#f0f0f0;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>{% endif %}</td>
-<td>{{ i.reference or '-' }}</td><td><strong>{{ i.name }}</strong></td><td>{{ i.category or '-' }}</td>
-<td style="text-align:right;font-weight:700">{{ i.quantity }}</td>
-<td style="text-align:right">{{ '{:,.0f}'.format(i.unit_price) }} F</td>
-</tr>{% endfor %}</tbody></table></div>
-{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun article. <a href="/stock">Gérer le stock →</a></p>{% endif %}
-</div></div>
-
-{% elif tab == 'fournisseurs' %}
+{% if tab == 'fournisseurs' %}
 <div class="card"><div class="card-header"><h3>🏢 Fournisseurs</h3>
     <button class="btn btn-orange btn-sm" onclick="document.getElementById('addFM').classList.add('active')">+ Fournisseur</button>
 </div><div class="card-body">
