@@ -23,8 +23,9 @@
     <button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Article</button>
 </div><div class="card-body">
 {% if items %}<div class="table-wrap"><table>
-<thead><tr><th>Réf</th><th>Désignation</th><th>Catégorie</th><th>Emplacement</th><th style="text-align:right">Qté</th><th style="text-align:right">P.U.</th><th style="text-align:right">Valeur</th><th>Stock min</th><th>Actions</th></tr></thead>
+<thead><tr><th>Image</th><th>Réf</th><th>Désignation</th><th>Catégorie</th><th>Emplacement</th><th style="text-align:right">Qté</th><th style="text-align:right">P.U.</th><th style="text-align:right">Valeur</th><th>Stock min</th><th>Actions</th></tr></thead>
 <tbody>{% for i in items %}<tr style="{% if i.quantity <= i.min_stock %}background:#fff3e0{% endif %}">
+<td>{% if i.image %}<img src="/uploads/stock/{{ i.image }}" style="width:40px;height:40px;object-fit:cover;border-radius:6px">{% else %}<div style="width:40px;height:40px;background:#f0f0f0;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:18px">📦</div>{% endif %}</td>
 <td><strong>{{ i.reference or '-' }}</strong></td>
 <td>{{ i.name }}</td><td>{{ i.category or '-' }}</td><td>{{ i.location or '-' }}</td>
 <td style="text-align:right;font-weight:700;{% if i.quantity <= i.min_stock %}color:#c53030{% endif %}">{{ i.quantity }}</td>
@@ -131,7 +132,7 @@
 <!-- Modal: Ajouter article -->
 <div class="modal-bg" id="addM"><div class="modal">
 <h3>📦 Nouvel article</h3>
-<form method="post" action="/stock/add">
+<form method="post" action="/stock/add" enctype="multipart/form-data">
     <div class="form-group"><label>Désignation *</label><input type="text" name="name" required></div>
     <div class="form-row"><div class="form-group"><label>Référence</label><input type="text" name="reference" placeholder="CAM-001"></div>
     <div class="form-group"><label>Catégorie</label><input type="text" name="category" placeholder="Caméras, Câbles..." list="catList"></div></div>
@@ -139,6 +140,7 @@
     <div class="form-group"><label>Prix unitaire (F)</label><input type="number" name="unit_price" step="500" value="0"></div></div>
     <div class="form-row"><div class="form-group"><label>Stock minimum</label><input type="number" name="min_stock" value="0"></div>
     <div class="form-group"><label>Emplacement</label><input type="text" name="location" placeholder="Magasin A" list="locList"></div></div>
+    <div class="form-group"><label>📷 Image de l'article</label><input type="file" name="image" accept=".jpg,.jpeg,.png,.webp" style="padding:8px;border:1.5px dashed #ccc;border-radius:8px;width:100%"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Ajouter</button></div>
 </form></div></div>
 <datalist id="catList">{% for c in categories %}<option value="{{ c.category }}">{% endfor %}</datalist>

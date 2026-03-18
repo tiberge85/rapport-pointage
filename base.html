@@ -204,6 +204,21 @@
             </div>
             {% endif %}
             
+            {% if 'comptabilite' in permissions %}
+            <!-- Achats -->
+            <div class="nav-section" id="sec-achats">
+                <div class="nav-section-title" onclick="toggleSection('sec-achats')">🛒 ACHATS <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/achats?tab=articles" class="{% if page == 'achats' and tab == 'articles' %}active{% endif %}">Articles</a>
+                    <a href="/achats?tab=fournisseurs" class="{% if page == 'achats' and tab == 'fournisseurs' %}active{% endif %}">Fournisseurs</a>
+                    <a href="/achats?tab=demandes" class="{% if page == 'achats' and tab == 'demandes' %}active{% endif %}">Demandes d'achat</a>
+                    <a href="/achats?tab=devis" class="{% if page == 'achats' and tab == 'devis' %}active{% endif %}">Devis fournisseur</a>
+                    <a href="/achats?tab=commandes" class="{% if page == 'achats' and tab == 'commandes' %}active{% endif %}">Bon de commande</a>
+                    <a href="/achats?tab=contrats" class="{% if page == 'achats' and tab == 'contrats' %}active{% endif %}">Contrats</a>
+                </div>
+            </div>
+            {% endif %}
+            
             {% if 'informatique' in permissions or 'projets' in permissions %}
             <!-- Informatique & Projets -->
             <div class="nav-section" id="sec-info">

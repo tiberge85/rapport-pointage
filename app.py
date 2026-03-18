@@ -85,6 +85,8 @@ migrate_v5()
 migrate_caisse()
 migrate_caisse_v2()
 migrate_v6()
+from models import migrate_v7
+migrate_v7()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -2038,6 +2040,25 @@ def rh_formations_add():
         target=target)
     flash("Formation ajoutée", "success"); return redirect(url_for('rh_formations'))
 
+@app.route('/rh/formations/edit/<int:fid>', methods=['POST'])
+@permission_required('fichiers')
+def rh_formations_edit(fid):
+    from models import db_update
+    db_update('rh_trainings', fid, title=request.form['title'], description=request.form.get('description',''),
+        trainer=request.form.get('trainer',''), date=request.form.get('date',''),
+        duration=request.form.get('duration',''), department=request.form.get('department',''),
+        cost=request.form.get('cost','0'), target=request.form.get('target','tous'),
+        status=request.form.get('status','planifie'))
+    flash("Formation modifiée", "success"); return redirect(url_for('rh_formations'))
+
+@app.route('/rh/formations/delete/<int:fid>')
+@permission_required('fichiers')
+def rh_formations_delete(fid):
+    conn = _gdb()
+    conn.execute("DELETE FROM rh_trainings WHERE id=?", (fid,))
+    conn.commit(); conn.close()
+    flash("Formation supprimée", "success"); return redirect(url_for('rh_formations'))
+
 @app.route('/rh/annonces')
 @permission_required('fichiers')
 def rh_annonces():
@@ -2052,6 +2073,23 @@ def rh_annonces_add():
     db_insert('rh_announcements', title=request.form['title'], content=request.form.get('content',''),
         priority=request.form.get('priority','normale'), created_by=session['user_id'])
     flash("Annonce publiée", "success"); return redirect(url_for('rh_annonces'))
+
+@app.route('/rh/annonces/edit/<int:aid>', methods=['POST'])
+@permission_required('fichiers')
+def rh_annonces_edit(aid):
+    conn = _gdb()
+    conn.execute("UPDATE rh_announcements SET title=?, content=?, priority=? WHERE id=?",
+        (request.form['title'], request.form.get('content',''), request.form.get('priority','normale'), aid))
+    conn.commit(); conn.close()
+    flash("Annonce modifiée", "success"); return redirect(url_for('rh_annonces'))
+
+@app.route('/rh/annonces/delete/<int:aid>')
+@permission_required('fichiers')
+def rh_annonces_delete(aid):
+    conn = _gdb()
+    conn.execute("DELETE FROM rh_announcements WHERE id=?", (aid,))
+    conn.commit(); conn.close()
+    flash("Annonce supprimée", "success"); return redirect(url_for('rh_annonces'))
 
 
 # ======================== KANBAN ========================
@@ -2743,6 +2781,139 @@ def pieces_caisse_add():
 @app.route('/uploads/pieces/<path:filename>')
 def piece_file(filename):
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'pieces'), filename)
+
+@app.route('/uploads/stock/<path:filename>')
+def stock_image(filename):
+    return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'stock'), filename)
+
+
+# ======================== MODULE ACHATS ========================
+
+@app.route('/achats')
+@permission_required('comptabilite')
+def achats_page():
+    tab = request.args.get('tab', 'articles')
+    conn = _gdb()
+    from models import db_get_all
+    
+    data = {'tab': tab}
+    data['stock_items'] = db_get_all('stock_items', order='name ASC')
+    data['fournisseurs'] = [dict(r) for r in conn.execute("SELECT * FROM achats_fournisseurs ORDER BY name").fetchall()]
+    data['demandes'] = [dict(r) for r in conn.execute("""SELECT ad.*, u.full_name as requester FROM achats_demandes ad 
+        LEFT JOIN users u ON ad.requested_by=u.id ORDER BY ad.created_at DESC LIMIT 50""").fetchall()]
+    data['devis_achats'] = [dict(r) for r in conn.execute("""SELECT ad.*, f.name as fournisseur_name FROM achats_devis ad
+        LEFT JOIN achats_fournisseurs f ON ad.fournisseur_id=f.id ORDER BY ad.created_at DESC LIMIT 50""").fetchall()]
+    data['commandes'] = [dict(r) for r in conn.execute("""SELECT ac.*, f.name as fournisseur_name FROM achats_commandes ac
+        LEFT JOIN achats_fournisseurs f ON ac.fournisseur_id=f.id ORDER BY ac.created_at DESC LIMIT 50""").fetchall()]
+    data['contrats'] = [dict(r) for r in conn.execute("""SELECT ac.*, f.name as fournisseur_name FROM achats_contrats ac
+        LEFT JOIN achats_fournisseurs f ON ac.fournisseur_id=f.id ORDER BY ac.created_at DESC""").fetchall()]
+    
+    # Stats
+    data['total_commandes'] = conn.execute("SELECT COALESCE(SUM(total),0) FROM achats_commandes").fetchone()[0]
+    data['pending_demandes'] = conn.execute("SELECT COUNT(*) FROM achats_demandes WHERE status='en_attente'").fetchone()[0]
+    conn.close()
+    return render_template('achats.html', page='achats', **data)
+
+@app.route('/achats/fournisseur/add', methods=['POST'])
+@permission_required('comptabilite')
+def achats_fournisseur_add():
+    _dbi('achats_fournisseurs', name=request.form['name'], contact_name=request.form.get('contact_name',''),
+        tel=request.form.get('tel',''), email=request.form.get('email',''),
+        address=request.form.get('address',''), city=request.form.get('city',''),
+        sector=request.form.get('sector',''), payment_terms=request.form.get('payment_terms',''))
+    flash("Fournisseur ajouté", "success"); return redirect('/achats?tab=fournisseurs')
+
+@app.route('/achats/fournisseur/edit/<int:fid>', methods=['POST'])
+@permission_required('comptabilite')
+def achats_fournisseur_edit(fid):
+    conn = _gdb()
+    conn.execute("""UPDATE achats_fournisseurs SET name=?,contact_name=?,tel=?,email=?,address=?,city=?,sector=?,payment_terms=?,notes=? WHERE id=?""",
+        (request.form['name'],request.form.get('contact_name',''),request.form.get('tel',''),request.form.get('email',''),
+         request.form.get('address',''),request.form.get('city',''),request.form.get('sector',''),
+         request.form.get('payment_terms',''),request.form.get('notes',''),fid))
+    conn.commit(); conn.close()
+    flash("Fournisseur modifié", "success"); return redirect('/achats?tab=fournisseurs')
+
+@app.route('/achats/fournisseur/delete/<int:fid>')
+@permission_required('comptabilite')
+def achats_fournisseur_delete(fid):
+    conn = _gdb(); conn.execute("DELETE FROM achats_fournisseurs WHERE id=?", (fid,)); conn.commit(); conn.close()
+    flash("Fournisseur supprimé", "success"); return redirect('/achats?tab=fournisseurs')
+
+@app.route('/achats/demande/add', methods=['POST'])
+@permission_required('comptabilite')
+def achats_demande_add():
+    ref = f"DA-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    _dbi('achats_demandes', reference=ref, date=request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
+        department=request.form.get('department',''), requested_by=session['user_id'],
+        description=request.form.get('description',''), urgency=request.form.get('urgency','normale'))
+    flash(f"Demande {ref} créée", "success"); return redirect('/achats?tab=demandes')
+
+@app.route('/achats/demande/<int:did>/approve')
+@permission_required('comptabilite')
+def achats_demande_approve(did):
+    conn = _gdb()
+    conn.execute("UPDATE achats_demandes SET status='approuvee', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
+        (session['user_id'], did))
+    conn.commit(); conn.close()
+    flash("Demande approuvée", "success"); return redirect('/achats?tab=demandes')
+
+@app.route('/achats/demande/<int:did>/reject')
+@permission_required('comptabilite')
+def achats_demande_reject(did):
+    conn = _gdb()
+    conn.execute("UPDATE achats_demandes SET status='refusee' WHERE id=?", (did,))
+    conn.commit(); conn.close()
+    flash("Demande refusée", "success"); return redirect('/achats?tab=demandes')
+
+@app.route('/achats/devis/add', methods=['POST'])
+@permission_required('comptabilite')
+def achats_devis_add():
+    ref = f"DAC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    total_ht = float(request.form.get('total_ht', 0) or 0)
+    tva = total_ht * 0.18
+    _dbi('achats_devis', reference=ref, fournisseur_id=int(request.form.get('fournisseur_id',0) or 0),
+        date=request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
+        items_json=request.form.get('items_description',''), total_ht=total_ht, tva=tva,
+        total_ttc=total_ht + tva, status='en_attente', notes=request.form.get('notes',''),
+        created_by=session['user_id'])
+    flash(f"Devis fournisseur {ref} enregistré", "success"); return redirect('/achats?tab=devis')
+
+@app.route('/achats/devis/<int:did>/status/<status>')
+@permission_required('comptabilite')
+def achats_devis_status(did, status):
+    if status in ('en_attente', 'accepte', 'refuse'):
+        conn = _gdb(); conn.execute("UPDATE achats_devis SET status=? WHERE id=?", (status, did)); conn.commit(); conn.close()
+    flash("Statut mis à jour", "success"); return redirect('/achats?tab=devis')
+
+@app.route('/achats/commande/add', methods=['POST'])
+@permission_required('comptabilite')
+def achats_commande_add():
+    ref = f"BC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    _dbi('achats_commandes', reference=ref, fournisseur_id=int(request.form.get('fournisseur_id',0) or 0),
+        date=request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
+        items_json=request.form.get('items_description',''),
+        total=float(request.form.get('total',0) or 0),
+        delivery_date=request.form.get('delivery_date',''),
+        notes=request.form.get('notes',''), created_by=session['user_id'])
+    flash(f"Bon de commande {ref} créé", "success"); return redirect('/achats?tab=commandes')
+
+@app.route('/achats/commande/<int:cid>/status/<status>')
+@permission_required('comptabilite')
+def achats_commande_status(cid, status):
+    if status in ('en_cours', 'livree', 'annulee'):
+        conn = _gdb(); conn.execute("UPDATE achats_commandes SET status=? WHERE id=?", (status, cid)); conn.commit(); conn.close()
+    flash("Statut mis à jour", "success"); return redirect('/achats?tab=commandes')
+
+@app.route('/achats/contrat/add', methods=['POST'])
+@permission_required('comptabilite')
+def achats_contrat_add():
+    ref = f"CTR-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    _dbi('achats_contrats', reference=ref, fournisseur_id=int(request.form.get('fournisseur_id',0) or 0),
+        title=request.form.get('title',''), description=request.form.get('description',''),
+        start_date=request.form.get('start_date',''), end_date=request.form.get('end_date',''),
+        amount=float(request.form.get('amount',0) or 0), created_by=session['user_id'])
+    flash("Contrat ajouté", "success"); return redirect('/achats?tab=contrats')
 
 
 if __name__ == '__main__':

@@ -1778,3 +1778,63 @@ def migrate_v6():
         try: conn.execute(f"ALTER TABLE prospects ADD COLUMN {col} TEXT DEFAULT ''")
         except: pass
     conn.commit(); conn.close()
+
+
+# ======================== MIGRATION V7 — ACHATS MODULE + STOCK IMAGE ========================
+
+def migrate_v7():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS achats_fournisseurs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, contact_name TEXT, tel TEXT, email TEXT,
+            address TEXT, city TEXT, sector TEXT, website TEXT,
+            payment_terms TEXT, notes TEXT, status TEXT DEFAULT 'actif',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS achats_demandes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reference TEXT UNIQUE, date TEXT, department TEXT,
+            requested_by INTEGER, description TEXT,
+            urgency TEXT DEFAULT 'normale', status TEXT DEFAULT 'en_attente',
+            approved_by INTEGER, approved_at TEXT,
+            notes TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS achats_demande_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            demande_id INTEGER, designation TEXT, quantity INTEGER DEFAULT 1,
+            estimated_price REAL DEFAULT 0, notes TEXT,
+            FOREIGN KEY (demande_id) REFERENCES achats_demandes(id)
+        );
+        CREATE TABLE IF NOT EXISTS achats_devis (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reference TEXT UNIQUE, fournisseur_id INTEGER,
+            demande_id INTEGER, date TEXT,
+            items_json TEXT, total_ht REAL DEFAULT 0, tva REAL DEFAULT 0,
+            total_ttc REAL DEFAULT 0, status TEXT DEFAULT 'en_attente',
+            notes TEXT, file_path TEXT,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS achats_commandes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reference TEXT UNIQUE, fournisseur_id INTEGER,
+            devis_achat_id INTEGER, date TEXT,
+            items_json TEXT, total REAL DEFAULT 0,
+            status TEXT DEFAULT 'en_cours', delivery_date TEXT,
+            notes TEXT, created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS achats_contrats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reference TEXT, fournisseur_id INTEGER,
+            title TEXT, description TEXT,
+            start_date TEXT, end_date TEXT,
+            amount REAL DEFAULT 0, status TEXT DEFAULT 'actif',
+            file_path TEXT, created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    # Stock image
+    try: conn.execute("ALTER TABLE stock_items ADD COLUMN image TEXT DEFAULT ''")
+    except: pass
+    conn.commit(); conn.close()

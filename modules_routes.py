@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Routes des modules WannyGest — Projets, CRM, Stock, Trésorerie, etc."""
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app
+import os
+from datetime import datetime
 from models import (db_insert, db_get_all, db_get_by_id, db_update, db_delete, db_count, db_sum, get_db,
                     get_user_by_id, get_all_clients, get_all_users, log_activity,
                     has_permission, get_role_permissions, log_audit)
@@ -155,10 +157,20 @@ def stock():
 @modules_bp.route('/stock/add', methods=['POST'])
 @perm_required('clients')
 def stock_add():
+    image = ''
+    if 'image' in request.files and request.files['image'].filename:
+        f = request.files['image']
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext in ('.jpg','.jpeg','.png','.webp'):
+            fname = f"stock_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
+            img_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'stock')
+            os.makedirs(img_dir, exist_ok=True)
+            f.save(os.path.join(img_dir, fname))
+            image = fname
     db_insert('stock_items', name=request.form['name'], reference=request.form.get('reference',''),
         category=request.form.get('category',''), quantity=int(request.form.get('quantity',0) or 0),
         unit_price=float(request.form.get('unit_price',0) or 0), min_stock=int(request.form.get('min_stock',0) or 0),
-        location=request.form.get('location',''))
+        location=request.form.get('location',''), image=image)
     flash("Article ajouté", "success"); return redirect(url_for('modules.stock'))
 
 @modules_bp.route('/stock/edit/<int:sid>', methods=['POST'])

@@ -1,19 +1,42 @@
 {% extends "base.html" %}{% block title %}WannyGest - Annonces{% endblock %}{% block content %}
-<div class="page-header"><h1>📢 Annonces</h1></div>
-<div style="margin-bottom:14px"><button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Nouvelle annonce</button></div>
+<div class="page-header"><h1>📢 Annonces internes</h1></div>
+<div class="card"><div class="card-header"><h3>Communications</h3><button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Annonce</button></div><div class="card-body">
+{% if annonces %}
 {% for a in annonces %}
-<div class="card" style="border-left:4px solid {% if a.priority=='urgente' %}#c53030{% elif a.priority=='importante' %}#e8672a{% else %}#1a3a5c{% endif %}">
-<div class="card-body">
-<div style="display:flex;justify-content:space-between;align-items:start">
-<h3 style="color:#1a3a5c;font-size:15px">{{ a.title }}</h3>
-<span style="font-size:10px;color:#888">{{ a.created_at[:10] }}</span>
+<div style="border:1.5px solid {% if a.priority=='urgente' %}#ef9a9a{% elif a.priority=='importante' %}#ffe082{% else %}#eee{% endif %};border-radius:12px;padding:14px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:start">
+        <div>
+            <strong style="font-size:14px">{{ a.title }}</strong>
+            <span class="badge-status {% if a.priority=='urgente' %}{% elif a.priority=='importante' %}pending{% else %}sent{% endif %}" style="font-size:10px;margin-left:6px">{{ a.priority }}</span>
+            <div style="font-size:12px;color:#555;margin-top:4px">{{ a.content or '' }}</div>
+            <div style="font-size:10px;color:#888;margin-top:4px">{{ a.created_at[:16] if a.created_at else '' }}</div>
+        </div>
+        <div style="display:flex;gap:3px">
+            <button class="btn btn-outline btn-sm" onclick="editAnnonce({{ a.id }},'{{ a.title|replace("'","") }}','{{ (a.content or '')|replace("'","") }}','{{ a.priority }}')">✏️</button>
+            <a href="/rh/annonces/delete/{{ a.id }}" class="btn btn-sm" style="color:#c53030" onclick="return confirm('Supprimer ?')">🗑️</a>
+        </div>
+    </div>
 </div>
-<p style="font-size:13px;margin-top:6px;line-height:1.5;white-space:pre-wrap">{{ a.content }}</p>
+{% endfor %}
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucune annonce publiée</p>{% endif %}
 </div></div>
-{% else %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:30px">Aucune annonce</div></div>{% endfor %}
+
 <div class="modal-bg" id="addM"><div class="modal"><h3>📢 Nouvelle annonce</h3><form method="post" action="/rh/annonces/add">
 <div class="form-group"><label>Titre *</label><input type="text" name="title" required></div>
+<div class="form-group"><label>Contenu</label><textarea name="content" rows="3" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
 <div class="form-group"><label>Priorité</label><select name="priority"><option value="normale">Normale</option><option value="importante">Importante</option><option value="urgente">Urgente</option></select></div>
-<div class="form-group"><label>Contenu *</label><textarea name="content" rows="4" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px" required></textarea></div>
 <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Publier</button></div></form></div></div>
+
+<div class="modal-bg" id="editM"><div class="modal"><h3>✏️ Modifier l'annonce</h3><form method="post" id="editForm">
+<div class="form-group"><label>Titre *</label><input type="text" name="title" id="ea_title" required></div>
+<div class="form-group"><label>Contenu</label><textarea name="content" id="ea_content" rows="3" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
+<div class="form-group"><label>Priorité</label><select name="priority" id="ea_priority"><option value="normale">Normale</option><option value="importante">Importante</option><option value="urgente">Urgente</option></select></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">💾 Sauvegarder</button></div></form></div></div>
+<script>
+function editAnnonce(id,title,content,priority){
+    document.getElementById('editForm').action='/rh/annonces/edit/'+id;
+    document.getElementById('ea_title').value=title;document.getElementById('ea_content').value=content;
+    document.getElementById('ea_priority').value=priority;document.getElementById('editM').classList.add('active');
+}
+</script>
 {% endblock %}

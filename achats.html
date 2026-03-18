@@ -1,0 +1,175 @@
+{% extends "base.html" %}{% block title %}WannyGest - Achats{% endblock %}{% block content %}
+<div class="page-header"><h1>🛒 Module Achats</h1></div>
+<div class="stats-grid">
+    <div class="stat-card"><div class="stat-icon orange">📋</div><div class="stat-info"><div class="stat-num">{{ pending_demandes }}</div><div class="stat-label">Demandes en attente</div></div></div>
+    <div class="stat-card"><div class="stat-icon blue">🏢</div><div class="stat-info"><div class="stat-num">{{ fournisseurs|length }}</div><div class="stat-label">Fournisseurs</div></div></div>
+    <div class="stat-card"><div class="stat-icon green">📦</div><div class="stat-info"><div class="stat-num">{{ commandes|length }}</div><div class="stat-label">Commandes</div></div></div>
+    <div class="stat-card"><div class="stat-icon" style="background:#e3f2fd;color:#1565c0">💰</div><div class="stat-info"><div class="stat-num">{{ '{:,.0f}'.format(total_commandes) }}</div><div class="stat-label">Total achats (F)</div></div></div>
+</div>
+<div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+{% for t,icon,label in [('articles','📦','Articles'),('fournisseurs','🏢','Fournisseurs'),('demandes','📋','Demandes'),('devis','📄','Devis fournisseur'),('commandes','🚚','Bon de commande'),('contrats','📑','Contrats'),('rapports','📊','Rapports'),('parametres','⚙️','Paramètres')] %}
+    <a href="/achats?tab={{ t }}" class="btn {% if tab==t %}btn-primary{% else %}btn-outline{% endif %} btn-sm">{{ icon }} {{ label }}</a>
+{% endfor %}
+</div>
+
+{% if tab == 'articles' %}
+<div class="card"><div class="card-header"><h3>📦 Articles (stock)</h3></div><div class="card-body">
+{% if stock_items %}<div class="table-wrap"><table>
+<thead><tr><th>Image</th><th>Réf</th><th>Désignation</th><th>Catégorie</th><th style="text-align:right">Stock</th><th style="text-align:right">P.U.</th></tr></thead>
+<tbody>{% for i in stock_items %}<tr>
+<td>{% if i.image %}<img src="/uploads/stock/{{ i.image }}" style="width:36px;height:36px;object-fit:cover;border-radius:4px">{% else %}<div style="width:36px;height:36px;background:#f0f0f0;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:16px">📦</div>{% endif %}</td>
+<td>{{ i.reference or '-' }}</td><td><strong>{{ i.name }}</strong></td><td>{{ i.category or '-' }}</td>
+<td style="text-align:right;font-weight:700">{{ i.quantity }}</td>
+<td style="text-align:right">{{ '{:,.0f}'.format(i.unit_price) }} F</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun article. <a href="/stock">Gérer le stock →</a></p>{% endif %}
+</div></div>
+
+{% elif tab == 'fournisseurs' %}
+<div class="card"><div class="card-header"><h3>🏢 Fournisseurs</h3>
+    <button class="btn btn-orange btn-sm" onclick="document.getElementById('addFM').classList.add('active')">+ Fournisseur</button>
+</div><div class="card-body">
+{% if fournisseurs %}<div class="table-wrap"><table>
+<thead><tr><th>Nom</th><th>Contact</th><th>Tél</th><th>Email</th><th>Ville</th><th>Secteur</th><th>Actions</th></tr></thead>
+<tbody>{% for f in fournisseurs %}<tr>
+<td><strong>{{ f.name }}</strong></td><td>{{ f.contact_name or '-' }}</td><td>{{ f.tel or '-' }}</td><td>{{ f.email or '-' }}</td>
+<td>{{ f.city or '-' }}</td><td>{{ f.sector or '-' }}</td>
+<td><a href="/achats/fournisseur/delete/{{ f.id }}" class="btn btn-sm" style="color:#c53030" onclick="return confirm('Supprimer ?')">🗑️</a></td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun fournisseur</p>{% endif %}
+</div></div>
+<div class="modal-bg" id="addFM"><div class="modal"><h3>🏢 Nouveau fournisseur</h3><form method="post" action="/achats/fournisseur/add">
+<div class="form-group"><label>Nom *</label><input type="text" name="name" required></div>
+<div class="form-row"><div class="form-group"><label>Contact</label><input type="text" name="contact_name"></div><div class="form-group"><label>Téléphone</label><input type="text" name="tel"></div></div>
+<div class="form-row"><div class="form-group"><label>Email</label><input type="email" name="email"></div><div class="form-group"><label>Ville</label><input type="text" name="city"></div></div>
+<div class="form-row"><div class="form-group"><label>Secteur</label><input type="text" name="sector"></div><div class="form-group"><label>Conditions paiement</label><input type="text" name="payment_terms" placeholder="30 jours"></div></div>
+<div class="form-group"><label>Adresse</label><input type="text" name="address"></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Ajouter</button></div>
+</form></div></div>
+
+{% elif tab == 'demandes' %}
+<div class="card"><div class="card-header"><h3>📋 Demandes d'achat</h3>
+    <button class="btn btn-orange btn-sm" onclick="document.getElementById('addDM').classList.add('active')">+ Demande</button>
+</div><div class="card-body">
+{% if demandes %}<div class="table-wrap"><table>
+<thead><tr><th>Réf</th><th>Date</th><th>Département</th><th>Demandeur</th><th>Description</th><th>Urgence</th><th>Statut</th><th>Actions</th></tr></thead>
+<tbody>{% for d in demandes %}<tr>
+<td><strong>{{ d.reference }}</strong></td><td>{{ d.date or '-' }}</td><td>{{ d.department or '-' }}</td><td>{{ d.requester or '-' }}</td>
+<td style="font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ d.description or '-' }}</td>
+<td><span class="badge-status {% if d.urgency=='haute' %}{% elif d.urgency=='critique' %}{% else %}sent{% endif %}" style="font-size:10px">{{ d.urgency }}</span></td>
+<td><span class="badge-status {% if d.status=='approuvee' %}sent{% elif d.status=='refusee' %}{% else %}pending{% endif %}">{{ d.status }}</span></td>
+<td style="display:flex;gap:3px">
+    {% if d.status=='en_attente' %}<a href="/achats/demande/{{ d.id }}/approve" class="btn btn-sm" style="background:#2e7d32;color:#fff">✅</a><a href="/achats/demande/{{ d.id }}/reject" class="btn btn-sm" style="color:#c53030">❌</a>{% endif %}
+</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucune demande</p>{% endif %}
+</div></div>
+<div class="modal-bg" id="addDM"><div class="modal"><h3>📋 Demande d'achat</h3><form method="post" action="/achats/demande/add">
+<div class="form-row"><div class="form-group"><label>Date</label><input type="date" name="date" value="{{ now }}"></div>
+<div class="form-group"><label>Département</label><input type="text" name="department" placeholder="IT, Technique..."></div>
+<div class="form-group"><label>Urgence</label><select name="urgency"><option value="normale">Normale</option><option value="haute">Haute</option><option value="critique">Critique</option></select></div></div>
+<div class="form-group"><label>Description *</label><textarea name="description" rows="3" required style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px" placeholder="Détaillez les articles nécessaires..."></textarea></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Soumettre</button></div>
+</form></div></div>
+
+{% elif tab == 'devis' %}
+<div class="card"><div class="card-header"><h3>📄 Devis fournisseurs</h3>
+    <button class="btn btn-orange btn-sm" onclick="document.getElementById('addDevM').classList.add('active')">+ Devis fournisseur</button>
+</div><div class="card-body">
+{% if devis_achats %}<div class="table-wrap"><table>
+<thead><tr><th>Réf</th><th>Date</th><th>Fournisseur</th><th>HT</th><th>TVA</th><th>TTC</th><th>Statut</th><th>Actions</th></tr></thead>
+<tbody>{% for d in devis_achats %}<tr>
+<td><strong>{{ d.reference }}</strong></td><td>{{ d.date or '-' }}</td><td>{{ d.fournisseur_name or '-' }}</td>
+<td style="text-align:right">{{ '{:,.0f}'.format(d.total_ht) }} F</td>
+<td style="text-align:right">{{ '{:,.0f}'.format(d.tva) }} F</td>
+<td style="text-align:right;font-weight:700">{{ '{:,.0f}'.format(d.total_ttc) }} F</td>
+<td><span class="badge-status {% if d.status=='accepte' %}sent{% elif d.status=='refuse' %}{% else %}pending{% endif %}">{{ d.status }}</span></td>
+<td style="display:flex;gap:3px">
+    {% if d.status=='en_attente' %}<a href="/achats/devis/{{ d.id }}/status/accepte" class="btn btn-sm" style="background:#2e7d32;color:#fff">✅</a><a href="/achats/devis/{{ d.id }}/status/refuse" class="btn btn-sm" style="color:#c53030">❌</a>{% endif %}
+</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun devis fournisseur</p>{% endif %}
+</div></div>
+<div class="modal-bg" id="addDevM"><div class="modal"><h3>📄 Devis fournisseur</h3><form method="post" action="/achats/devis/add">
+<div class="form-row"><div class="form-group"><label>Fournisseur *</label><select name="fournisseur_id" required><option value="">—</option>{% for f in fournisseurs %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}</select></div>
+<div class="form-group"><label>Date</label><input type="date" name="date" value="{{ now }}"></div></div>
+<div class="form-group"><label>Articles / description</label><textarea name="items_description" rows="3" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px" placeholder="Liste des articles..."></textarea></div>
+<div class="form-row"><div class="form-group"><label>Total HT (FCFA)</label><input type="number" name="total_ht" step="1000" required></div>
+<div class="form-group"><label>Notes</label><input type="text" name="notes"></div></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Enregistrer</button></div>
+</form></div></div>
+
+{% elif tab == 'commandes' %}
+<div class="card"><div class="card-header"><h3>🚚 Bons de commande</h3>
+    <button class="btn btn-orange btn-sm" onclick="document.getElementById('addCM').classList.add('active')">+ Commande</button>
+</div><div class="card-body">
+{% if commandes %}<div class="table-wrap"><table>
+<thead><tr><th>Réf</th><th>Date</th><th>Fournisseur</th><th>Total</th><th>Livraison prévue</th><th>Statut</th><th>Actions</th></tr></thead>
+<tbody>{% for c in commandes %}<tr>
+<td><strong>{{ c.reference }}</strong></td><td>{{ c.date or '-' }}</td><td>{{ c.fournisseur_name or '-' }}</td>
+<td style="text-align:right;font-weight:700">{{ '{:,.0f}'.format(c.total) }} F</td>
+<td>{{ c.delivery_date or '-' }}</td>
+<td><span class="badge-status {% if c.status=='livree' %}sent{% elif c.status=='annulee' %}{% else %}pending{% endif %}">{{ c.status }}</span></td>
+<td style="display:flex;gap:3px">
+    {% if c.status=='en_cours' %}<a href="/achats/commande/{{ c.id }}/status/livree" class="btn btn-sm" style="background:#2e7d32;color:#fff">📦 Livrée</a>
+    <a href="/achats/commande/{{ c.id }}/status/annulee" class="btn btn-sm" style="color:#c53030">❌</a>{% endif %}
+</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun bon de commande</p>{% endif %}
+</div></div>
+<div class="modal-bg" id="addCM"><div class="modal"><h3>🚚 Bon de commande</h3><form method="post" action="/achats/commande/add">
+<div class="form-row"><div class="form-group"><label>Fournisseur *</label><select name="fournisseur_id" required><option value="">—</option>{% for f in fournisseurs %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}</select></div>
+<div class="form-group"><label>Date</label><input type="date" name="date" value="{{ now }}"></div></div>
+<div class="form-group"><label>Articles commandés</label><textarea name="items_description" rows="3" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
+<div class="form-row"><div class="form-group"><label>Total (FCFA)</label><input type="number" name="total" step="1000" required></div>
+<div class="form-group"><label>Date livraison prévue</label><input type="date" name="delivery_date"></div></div>
+<div class="form-group"><label>Notes</label><input type="text" name="notes"></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Créer</button></div>
+</form></div></div>
+
+{% elif tab == 'contrats' %}
+<div class="card"><div class="card-header"><h3>📑 Contrats fournisseurs</h3>
+    <button class="btn btn-orange btn-sm" onclick="document.getElementById('addCtM').classList.add('active')">+ Contrat</button>
+</div><div class="card-body">
+{% if contrats %}<div class="table-wrap"><table>
+<thead><tr><th>Réf</th><th>Fournisseur</th><th>Titre</th><th>Début</th><th>Fin</th><th>Montant</th><th>Statut</th></tr></thead>
+<tbody>{% for c in contrats %}<tr>
+<td><strong>{{ c.reference }}</strong></td><td>{{ c.fournisseur_name or '-' }}</td><td>{{ c.title or '-' }}</td>
+<td>{{ c.start_date or '-' }}</td><td>{{ c.end_date or '-' }}</td>
+<td style="text-align:right;font-weight:700">{{ '{:,.0f}'.format(c.amount) }} F</td>
+<td><span class="badge-status {% if c.status=='actif' %}sent{% else %}pending{% endif %}">{{ c.status }}</span></td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucun contrat</p>{% endif %}
+</div></div>
+<div class="modal-bg" id="addCtM"><div class="modal"><h3>📑 Contrat fournisseur</h3><form method="post" action="/achats/contrat/add">
+<div class="form-row"><div class="form-group"><label>Fournisseur *</label><select name="fournisseur_id" required><option value="">—</option>{% for f in fournisseurs %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}</select></div>
+<div class="form-group"><label>Titre *</label><input type="text" name="title" required></div></div>
+<div class="form-group"><label>Description</label><textarea name="description" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
+<div class="form-row"><div class="form-group"><label>Date début</label><input type="date" name="start_date"></div>
+<div class="form-group"><label>Date fin</label><input type="date" name="end_date"></div>
+<div class="form-group"><label>Montant (FCFA)</label><input type="number" name="amount" step="10000"></div></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Ajouter</button></div>
+</form></div></div>
+
+{% elif tab == 'rapports' %}
+<div class="card"><div class="card-header"><h3>📊 Rapport achats</h3></div><div class="card-body">
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+    <div style="padding:16px;background:#f8faf9;border-radius:10px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ fournisseurs|length }}</div><div style="font-size:11px;color:#555">Fournisseurs actifs</div></div>
+    <div style="padding:16px;background:#fff3e0;border-radius:10px;text-align:center"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ commandes|length }}</div><div style="font-size:11px;color:#555">Commandes passées</div></div>
+    <div style="padding:16px;background:#e3f2fd;border-radius:10px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ '{:,.0f}'.format(total_commandes) }} F</div><div style="font-size:11px;color:#555">Total achats</div></div>
+</div>
+</div></div>
+
+{% elif tab == 'parametres' %}
+<div class="card"><div class="card-header"><h3>⚙️ Paramètres achats</h3></div><div class="card-body">
+<p style="font-size:13px;color:#555">Le module Achats centralise la gestion de vos fournisseurs, demandes d'achat, devis fournisseurs, bons de commande et contrats.</p>
+<h4 style="font-size:13px;margin:16px 0 8px">Flux d'achat recommandé</h4>
+<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px">
+    <span style="background:#e3f2fd;padding:6px 12px;border-radius:6px">1. Demande d'achat</span> →
+    <span style="background:#fff3e0;padding:6px 12px;border-radius:6px">2. Devis fournisseur</span> →
+    <span style="background:#e8f5e9;padding:6px 12px;border-radius:6px">3. Bon de commande</span> →
+    <span style="background:#f3e5f5;padding:6px 12px;border-radius:6px">4. Réception + Stock</span>
+</div>
+</div></div>
+{% endif %}
+{% endblock %}
