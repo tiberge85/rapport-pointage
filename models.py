@@ -1877,27 +1877,31 @@ def migrate_v8():
     conn.commit(); conn.close()
 
 
-def save_known_employees(names):
-    """Sauvegarde les noms d'employés des fichiers de présence."""
+def save_known_employees(names, services=None):
+    """Sauvegarde les noms d'employés des fichiers de présence avec leur service."""
+    if services is None: services = {}
     conn = get_db()
     try:
-        conn.execute("CREATE TABLE IF NOT EXISTS known_employees (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, source TEXT DEFAULT 'pointeuse', created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        conn.execute("CREATE TABLE IF NOT EXISTS known_employees (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, service TEXT DEFAULT '', source TEXT DEFAULT 'pointeuse', created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
         conn.commit()
+    except: pass
+    try: conn.execute("ALTER TABLE known_employees ADD COLUMN service TEXT DEFAULT ''")
     except: pass
     for name in names:
         name = name.strip()
         if name:
-            try: conn.execute("INSERT OR IGNORE INTO known_employees (name) VALUES (?)", (name,))
+            svc = services.get(name, '')
+            try: conn.execute("INSERT OR REPLACE INTO known_employees (name, service) VALUES (?, ?)", (name, svc))
             except: pass
     conn.commit(); conn.close()
 
 def get_known_employees():
-    """Retourne tous les noms d'employés connus."""
+    """Retourne tous les noms d'employés connus avec leur service."""
     conn = get_db()
     try:
-        conn.execute("CREATE TABLE IF NOT EXISTS known_employees (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, source TEXT DEFAULT 'pointeuse', created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
+        conn.execute("CREATE TABLE IF NOT EXISTS known_employees (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, service TEXT DEFAULT '', source TEXT DEFAULT 'pointeuse', created_at TEXT DEFAULT CURRENT_TIMESTAMP)")
         conn.commit()
     except: pass
-    rows = conn.execute("SELECT DISTINCT name FROM known_employees ORDER BY name").fetchall()
+    rows = conn.execute("SELECT DISTINCT name, service FROM known_employees ORDER BY service, name").fetchall()
     conn.close()
-    return [r['name'] for r in rows]
+    return [dict(r) for r in rows]

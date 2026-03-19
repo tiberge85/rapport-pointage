@@ -123,10 +123,49 @@
                 <div class="hint">Ex: 8h en semaine, 4h le week-end. Mettez 0 pour utiliser l'emploi du temps du fichier.</div>
             </div>
             
-            <!-- Step 6: Logo -->
-            <div class="step" style="border-bottom:none">
+            <!-- Step 6: Coût horaire -->
+            <div class="step">
                 <div class="step-label">
                     <span class="step-num">6</span>
+                    <span class="step-title">Coût horaire de travail (FCFA)</span>
+                </div>
+                <div class="form-group">
+                    <label style="font-size:12px;font-weight:600">Coût par défaut pour tous</label>
+                    <div style="display:flex;gap:8px;align-items:center">
+                        <input type="number" name="hourly_cost" id="defaultCost" min="0" step="100" value="0" style="width:160px" placeholder="Ex: 1500">
+                        <button type="button" class="btn btn-outline btn-sm" onclick="applyDefaultCost()">Appliquer à tous</button>
+                    </div>
+                </div>
+                <div id="empCostList" style="display:none;margin-top:8px;background:#f8faf9;padding:10px 14px;border-radius:8px;max-height:250px;overflow-y:auto">
+                    <div style="font-size:11px;font-weight:700;color:#1a3a5c;margin-bottom:6px">💰 Coût par employé (personnalisable) :</div>
+                    <!-- Filled dynamically by JS -->
+                </div>
+                <input type="hidden" name="employee_costs_json" id="empCostsJson" value="{}">
+                <div class="hint">Définissez un coût global ou personnalisez par employé. Le gain perdu sera calculé sur le rapport individuel.</div>
+            </div>
+            
+            <!-- Step 7: Type de rapport -->
+            <div class="step">
+                <div class="step-label">
+                    <span class="step-num">7</span>
+                    <span class="step-title">Type de rapport à générer</span>
+                </div>
+                <div style="display:flex;gap:12px;flex-wrap:wrap">
+                    <label style="display:flex;align-items:start;gap:8px;padding:10px 14px;border:2px solid #1a7a6d;border-radius:10px;cursor:pointer;flex:1;min-width:200px;background:#f8faf9">
+                        <input type="radio" name="report_type" value="full" checked style="margin-top:2px">
+                        <div><strong style="font-size:13px;color:#1a3a5c">📊 Rapport complet</strong><br><span style="font-size:11px;color:#888">Détails, retards, absences, heures sup., classements, graphiques</span></div>
+                    </label>
+                    <label style="display:flex;align-items:start;gap:8px;padding:10px 14px;border:2px solid #ddd;border-radius:10px;cursor:pointer;flex:1;min-width:200px">
+                        <input type="radio" name="report_type" value="simple" style="margin-top:2px">
+                        <div><strong style="font-size:13px;color:#1a3a5c">📋 Fiche de présence simple</strong><br><span style="font-size:11px;color:#888">Uniquement les heures d'arrivée et départ, sans retards ni absences</span></div>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- Step 8: Logo -->
+            <div class="step" style="border-bottom:none">
+                <div class="step-label">
+                    <span class="step-num">8</span>
                     <span class="step-title">Logo (optionnel)</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:12px">
@@ -207,15 +246,34 @@ function tryMerge() {
         .then(data => {
             if (data.error) { status.className='merge-status error'; status.textContent='❌ '+data.error; return; }
             status.className = 'merge-status success';
-            status.innerHTML = `✅ Fusion réussie — ${data.employees} employés, ${data.rows} enregistrements<br><a href="/traitement/merge/download/${data.merge_id}" class="merge-dl-btn">📥 Télécharger le fichier Présence fusionné (.xlsx)</a>`;
+            status.innerHTML = `✅ Fusion réussie — ${Array.isArray(data.employees) ? data.employees.length : data.employees} employés, ${data.rows} enregistrements<br><a href="/traitement/merge/download/${data.merge_id}" class="merge-dl-btn">📥 Télécharger le fichier Présence fusionné (.xlsx)</a>`;
             mergeIdInput.value = data.merge_id;
             fileName.textContent = '✅ ' + data.filename + ' (généré automatiquement)';
             dropZone.classList.add('merged');
             document.getElementById('presenceText').innerHTML = '<strong>✅ Fichier de présence généré automatiquement</strong>';
             submitBtn.disabled = false;
-            document.getElementById('empCount').textContent = data.employees + ' employés';
+            var empNames = Array.isArray(data.employees) ? data.employees : [];
+            var empServices = data.emp_services || {};
+            document.getElementById('empCount').textContent = empNames.length + ' employés';
             document.getElementById('detectedClient').textContent = data.client;
             previewBox.classList.add('visible');
+            if (empNames.length > 0) {
+                var empObjs = empNames.map(function(n) { return {name: n, ref: '', days: 0}; });
+                buildCostInputs(empObjs);
+                // Group by service for display
+                var grouped = {};
+                empNames.forEach(function(n) {
+                    var svc = empServices[n] || 'Non défini';
+                    if (!grouped[svc]) grouped[svc] = [];
+                    grouped[svc].push(n);
+                });
+                var html = '';
+                for (var svc in grouped) {
+                    html += '<div style="font-weight:700;font-size:11px;color:#1a7a6d;margin:6px 0 2px">🏢 ' + svc + '</div>';
+                    grouped[svc].forEach(function(n, i) { html += '<div style="padding-left:12px;font-size:11px">' + (i+1) + '. ' + n + '</div>'; });
+                }
+                document.getElementById('empList').innerHTML = html;
+            }
         })
         .catch(() => { status.className='merge-status error'; status.textContent='❌ Erreur de connexion'; });
 }
@@ -249,10 +307,42 @@ function handleFile(file) {
             data.employees.forEach((e,i) => html += `<div>${i+1}. <strong>${e.name}</strong> (${e.ref}) — ${e.days} jours</div>`);
             document.getElementById('empList').innerHTML = html;
             previewBox.classList.add('visible');
+            buildCostInputs(data.employees);
         }).catch(()=>{});
 }
 
+var _employees = [];
+function buildCostInputs(employees) {
+    _employees = employees;
+    var box = document.getElementById('empCostList');
+    var html = '';
+    employees.forEach(function(e, i) {
+        html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">' +
+            '<span style="flex:1;font-size:11px;font-weight:600">' + e.name + '</span>' +
+            '<input type="number" id="cost_' + i + '" data-name="' + e.name + '" class="emp-cost-input" min="0" step="100" value="0" style="width:100px;padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:11px" placeholder="FCFA/h">' +
+            '</div>';
+    });
+    box.innerHTML = '<div style="font-size:11px;font-weight:700;color:#1a3a5c;margin-bottom:6px">💰 Coût par employé :</div>' + html;
+    box.style.display = 'block';
+}
+
+function applyDefaultCost() {
+    var val = document.getElementById('defaultCost').value || '0';
+    document.querySelectorAll('.emp-cost-input').forEach(function(inp) { inp.value = val; });
+}
+
+function collectCosts() {
+    var costs = {};
+    document.querySelectorAll('.emp-cost-input').forEach(function(inp) {
+        var name = inp.dataset.name;
+        var val = parseFloat(inp.value) || 0;
+        if (val > 0) costs[name] = val;
+    });
+    document.getElementById('empCostsJson').value = JSON.stringify(costs);
+}
+
 document.getElementById('reportForm').addEventListener('submit', () => {
+    collectCosts();
     submitBtn.classList.add('loading');
     document.getElementById('spinner').classList.add('active');
     document.getElementById('btnText').textContent = 'Génération en cours...';

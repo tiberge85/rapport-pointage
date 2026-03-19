@@ -356,9 +356,10 @@ def traitement_merge():
         # Save employee names for schedule
         if result.get('employees'):
             from models import save_known_employees
-            save_known_employees(result['employees'])
+            save_known_employees(result['employees'], result.get('emp_services', {}))
         return jsonify({"success": True, "merge_id": merge_id, "client": result['client'],
-            "employees": result['employees'], "rows": result['rows'], "filename": 'Presence_fusionnee.xlsx'})
+            "employees": result['employees'], "emp_services": result.get('emp_services', {}),
+            "rows": result['rows'], "filename": 'Presence_fusionnee.xlsx'})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -404,6 +405,9 @@ def traitement_generate():
     client_id_str = request.form.get('client_id', '').strip()
     hp_str = request.form.get('required_hours', '0').strip()
     hp_we_str = request.form.get('required_hours_weekend', '0').strip()
+    hourly_cost_str = request.form.get('hourly_cost', '0').strip()
+    employee_costs_json = request.form.get('employee_costs_json', '{}')
+    report_type = request.form.get('report_type', 'full')
     
     # Auto-fill from client database
     client_id = int(client_id_str) if client_id_str else None
@@ -427,6 +431,14 @@ def traitement_generate():
         hp_weekend = float(hp_we_str) if hp_we_str else 0
     except:
         hp_weekend = 0
+    try:
+        hourly_cost = float(hourly_cost_str) if hourly_cost_str else 0
+    except:
+        hourly_cost = 0
+    try:
+        employee_costs = json.loads(employee_costs_json) if employee_costs_json else {}
+    except:
+        employee_costs = {}
     
     job_id = str(uuid.uuid4())[:8]
     job_dir = os.path.join(app.config['UPLOAD_FOLDER'], job_id)
@@ -486,7 +498,8 @@ def traitement_generate():
         
         generate_full_pdf(emps, output_path, provider_name, provider_info,
                          client_name, period, logo_path, hp=hp, client_info=client_info,
-                         work_dir=job_dir, hp_weekend=hp_weekend)
+                         work_dir=job_dir, hp_weekend=hp_weekend, hourly_cost=hourly_cost,
+                         employee_costs=employee_costs, report_type=report_type)
         
         if not os.path.exists(output_path):
             flash("Erreur génération PDF", "error")
@@ -999,12 +1012,23 @@ def schedule_page():
     
     # Collect employee names from DB (saved when files are processed)
     from models import get_known_employees
-    all_employees = set(get_known_employees())
-    all_employees.update(s['employee_name'] for s in schedules)
+    known = get_known_employees()
+    all_employees = {e['name']: e.get('service','') for e in known}
+    for s in schedules:
+        if s['employee_name'] not in all_employees:
+            all_employees[s['employee_name']] = ''
+    
+    # Group employees by service
+    by_service = {}
+    for name, svc in sorted(all_employees.items()):
+        svc = svc or 'Non défini'
+        if svc not in by_service: by_service[svc] = []
+        by_service[svc].append(name)
     
     days = {0:'Lundi', 1:'Mardi', 2:'Mercredi', 3:'Jeudi', 4:'Vendredi', 5:'Samedi', 6:'Dimanche'}
     return render_template('emploi_du_temps.html', page='schedule', emp_schedules=emp_schedules,
-        days=days, anomalies=anomalies, employees=sorted(all_employees))
+        days=days, anomalies=anomalies, employees=sorted(all_employees.keys()),
+        by_service=by_service)
 
 @app.route('/emploi-du-temps/add', methods=['POST'])
 @permission_required('traitement')

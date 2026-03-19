@@ -99,8 +99,12 @@
         <label>Employés * <span style="font-size:10px;color:#888">(Ctrl+clic pour sélection multiple)</span></label>
         {% if employees %}
         <select name="employee_names" multiple class="emp-select">
-            {% for name in employees %}
-            <option value="{{ name }}">{{ name }}</option>
+            {% for service, names in by_service.items() %}
+            <optgroup label="🏢 {{ service }}">
+                {% for name in names %}
+                <option value="{{ name }}">{{ name }}</option>
+                {% endfor %}
+            </optgroup>
             {% endfor %}
         </select>
         {% else %}

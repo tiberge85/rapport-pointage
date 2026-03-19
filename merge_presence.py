@@ -353,10 +353,20 @@ def generate_presence_xlsx(enr_path, trans_path, output_path):
     wb.save(output_path)
     
     emp_count = len(set(r[2] for r in rows))
+    emp_names = sorted(set(f"{r[0]} {r[1]}".strip() for r in rows if r[0]))
+    # Group by service for frontend
+    emp_by_service = {}
+    for r in rows:
+        name = f"{r[0]} {r[1]}".strip() if r[0] else None
+        service = r[3] if len(r) > 3 else ''
+        if name and name not in emp_by_service:
+            emp_by_service[name] = service or 'Non défini'
     return {
         'path': output_path,
         'client': client_name,
-        'employees': emp_count,
+        'employees': emp_names,
+        'emp_services': emp_by_service,
+        'emp_count': emp_count,
         'rows': len(rows)
     }
 

@@ -147,8 +147,8 @@ def extract_from_excel(xlsx_path):
 
 # ======================== CALCULS ========================
 
-def calc_employee_stats(emp, hp=0, hp_weekend=0):
-    """Calcule les statistiques complètes d'un employé. hp=heures obligatoires semaine, hp_weekend=heures obligatoires weekend (0=auto)."""
+def calc_employee_stats(emp, hp=0, hp_weekend=0, hourly_cost=0):
+    """Calcule les statistiques complètes d'un employé. hp=heures obligatoires semaine, hp_weekend=heures obligatoires weekend (0=auto), hourly_cost=coût horaire FCFA."""
     records = emp['records']
     total_required = 0
     total_worked = 0
@@ -279,6 +279,11 @@ def calc_employee_stats(emp, hp=0, hp_weekend=0):
         'total_late_mins': total_late_mins,
         'presence_rate': round(presence_rate, 1),
         'observation': observation,
+        'hourly_cost': hourly_cost,
+        'cost_late': round(total_late_mins / 60 * hourly_cost) if hourly_cost > 0 else 0,
+        'cost_deficit': round(total_deficit / 60 * hourly_cost) if hourly_cost > 0 else 0,
+        'cost_absent': round(days_absent * (total_required / max(len(records), 1)) / 60 * hourly_cost) if hourly_cost > 0 else 0,
+        'cost_overtime': round(total_overtime / 60 * hourly_cost) if hourly_cost > 0 else 0,
     }
     
     return enriched, stats
@@ -426,8 +431,45 @@ def gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info
             ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
             ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
             ('LEFTPADDING',(0,0),(-1,-1),4)]))
-        story.extend([tt, Spacer(1,2*mm),
-            Paragraph(f"Généré le {now} | {safe(client_name)} - Rapport enrichi", S['ft'])])
+        story.extend([tt, Spacer(1,2*mm)])
+        
+        # === ENCADRÉ COÛT (si hourly_cost > 0) ===
+        if stats.get('hourly_cost', 0) > 0:
+            fmt_cost = lambda x: f"{x:,.0f} FCFA"
+            cost_data = [
+                [Paragraph("<b>💰 IMPACT FINANCIER</b>", ParagraphStyle('ct',fontName='Helvetica-Bold',fontSize=8,textColor=colors.white)),
+                 Paragraph(f"<b>Coût horaire : {fmt_cost(stats['hourly_cost'])}</b>", ParagraphStyle('ct2',fontName='Helvetica-Bold',fontSize=8,textColor=colors.white,alignment=2))],
+                [Paragraph(f"Perte retards ({m2h(stats['total_late_mins'])})", ParagraphStyle('cl',fontSize=7,textColor=DARK_TEAL)),
+                 Paragraph(f"<b>{fmt_cost(stats['cost_late'])}</b>", ParagraphStyle('cr',fontSize=8,fontName='Helvetica-Bold',textColor=RED,alignment=2))],
+                [Paragraph(f"Perte déficit horaire ({m2h(stats['total_deficit'])})", ParagraphStyle('cl',fontSize=7,textColor=DARK_TEAL)),
+                 Paragraph(f"<b>{fmt_cost(stats['cost_deficit'])}</b>", ParagraphStyle('cr',fontSize=8,fontName='Helvetica-Bold',textColor=RED,alignment=2))],
+                [Paragraph(f"Perte absences ({stats['days_absent']} jour(s))", ParagraphStyle('cl',fontSize=7,textColor=DARK_TEAL)),
+                 Paragraph(f"<b>{fmt_cost(stats['cost_absent'])}</b>", ParagraphStyle('cr',fontSize=8,fontName='Helvetica-Bold',textColor=RED,alignment=2))],
+                [Paragraph("<b>TOTAL GAIN PERDU</b>", ParagraphStyle('ct3',fontName='Helvetica-Bold',fontSize=8,textColor=RED)),
+                 Paragraph(f"<b>{fmt_cost(stats['cost_late'] + stats['cost_deficit'] + stats['cost_absent'])}</b>",
+                    ParagraphStyle('ct4',fontName='Helvetica-Bold',fontSize=9,textColor=RED,alignment=2))],
+            ]
+            if stats['cost_overtime'] > 0:
+                cost_data.append([
+                    Paragraph(f"Heures sup. ({m2h(stats['total_overtime'])})", ParagraphStyle('cl',fontSize=7,textColor=DARK_TEAL)),
+                    Paragraph(f"<b>+{fmt_cost(stats['cost_overtime'])}</b>", ParagraphStyle('cr',fontSize=8,fontName='Helvetica-Bold',textColor=BLUE,alignment=2))
+                ])
+            
+            ct = Table(cost_data, colWidths=[120*mm, 70*mm])
+            ct_style = [
+                ('BACKGROUND',(0,0),(-1,0),DARK_TEAL),
+                ('BACKGROUND',(0,-1),(-1,-1),HexColor('#fff3e0')),
+                ('BOX',(0,0),(-1,-1),1,DARK_TEAL),
+                ('INNERGRID',(0,0),(-1,-1),0.3,colors.grey),
+                ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+                ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
+                ('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),6),
+            ]
+            ct.setStyle(TableStyle(ct_style))
+            story.extend([ct, Spacer(1,2*mm)])
+        
+        story.append(
+            Paragraph(f"Généré le {now} | {safe(client_name)} - Rapport enrichi", S['ft']))
 
 # ======================== PAGE : RAPPORT DE PRÉSENCE ========================
 
@@ -757,9 +799,197 @@ def gen_graphique(story, emps, all_stats, S, provider_name, provider_info, clien
         ('LEFTPADDING',(0,0),(-1,-1),6)]))
     story.extend([leg, Spacer(1,4*mm), Paragraph(f"Généré le {now}", S['ft'])])
 
+# ======================== FICHE DE PRÉSENCE SIMPLE ========================
+
+def gen_simple_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now):
+    """Génère une fiche de présence simple : uniquement N°, Date, Planning, Arrivée, Départ — sans retards, absences, totaux."""
+    
+    for idx, emp in enumerate(emps):
+        if idx > 0: story.append(PageBreak())
+        
+        enriched, stats = all_stats[idx]
+        
+        story.append(make_header(S, provider_name, provider_info, client_name, client_info))
+        story.append(Spacer(1, 3*mm))
+        story.append(Paragraph("RAPPORT INDIVIDUEL", S['ti']))
+        story.append(Paragraph(period, S['st']))
+        story.append(Paragraph(f"Employé: {emp['name']}  |  Réf: {emp['ref']}", S['ei']))
+        story.append(Spacer(1, 3*mm))
+        
+        # Résumé ultra-compact : jours prévus seulement
+        sum_data = [[
+            Paragraph("<b>Nbre de jours à Effectuer</b>", S['sh']),
+            Paragraph(f"<b>{stats['days_required']} jours</b>", S['sv']),
+        ]]
+        st = Table(sum_data, colWidths=[95*mm, 95*mm])
+        st.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(0,0),TEAL), ('BACKGROUND',(1,0),(1,0),HexColor('#f8faf9')),
+            ('BOX',(0,0),(-1,-1),0.5,TEAL),
+            ('ALIGN',(0,0),(-1,-1),'CENTER'), ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('TOPPADDING',(0,0),(-1,-1),4), ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ]))
+        story.extend([st, Spacer(1, 3*mm)])
+        
+        # Tableau simple : N°, Date, Emploi du temps, Heure d'arrivée, Heure de départ
+        hdrs = ["N°", "Date", "Emploi du temps", "Heure d'arrivée", "Heure de départ"]
+        cw = [10*mm, 25*mm, 40*mm, 55*mm, 55*mm]
+        
+        td = [[Paragraph(x, S['h']) for x in hdrs]]
+        
+        for i, rec in enumerate(enriched, 1):
+            td.append([
+                Paragraph(str(i), S['c']),
+                Paragraph(rec['date'], S['c']),
+                Paragraph(rec['schedule'], S['c']),
+                Paragraph(rec['arrival'] if rec['arrival'] and rec['state'] != 'Absent(e)' else '-', S['c']),
+                Paragraph(rec['departure'] if rec['departure'] and rec['state'] != 'Absent(e)' else '', S['c']),
+            ])
+        
+        dt = Table(td, colWidths=cw, repeatRows=1)
+        sc = [('BACKGROUND',(0,0),(-1,0),TEAL),
+              ('GRID',(0,0),(-1,-1),0.3,colors.grey),
+              ('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+              ('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2),
+              ('LEFTPADDING',(0,0),(-1,-1),2),('RIGHTPADDING',(0,0),(-1,-1),2)]
+        for i in range(2, len(td), 2):
+            sc.append(('BACKGROUND',(0,i),(-1,i),LGRAY))
+        dt.setStyle(TableStyle(sc))
+        story.append(dt)
+        
+        # Coût si applicable
+        if stats.get('hourly_cost', 0) > 0 and (stats['cost_late'] > 0 or stats['cost_deficit'] > 0 or stats['cost_absent'] > 0):
+            story.append(Spacer(1, 3*mm))
+            fmt_cost = lambda x: f"{x:,.0f} FCFA"
+            total_loss = stats['cost_late'] + stats['cost_deficit'] + stats['cost_absent']
+            cost_line = Table([[
+                Paragraph(f"<b>💰 Coût horaire: {fmt_cost(stats['hourly_cost'])}</b>", ParagraphStyle('x',fontName='Helvetica-Bold',fontSize=8,textColor=DARK_TEAL)),
+                Paragraph(f"<b>Gain perdu: {fmt_cost(total_loss)}</b>", ParagraphStyle('x',fontName='Helvetica-Bold',fontSize=8,textColor=RED,alignment=2)),
+            ]], colWidths=[95*mm, 95*mm])
+            cost_line.setStyle(TableStyle([('BOX',(0,0),(-1,-1),0.8,DARK_TEAL),
+                ('INNERGRID',(0,0),(-1,-1),0.4,DARK_TEAL),
+                ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+                ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4),
+                ('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),6)]))
+            story.append(cost_line)
+        
+        story.append(Spacer(1, 3*mm))
+        story.append(Paragraph(f"Imprimé par : RH, le {now}", S['ft']))
+
+# ======================== FICHE DE PRÉSENCE SIMPLE ========================
+
+def gen_simple_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now):
+    """Génère une fiche simple : N°, Date, Planning, Arrivée, Départ — sans retard/absence/totaux."""
+    
+    for idx, emp in enumerate(emps):
+        if idx > 0: story.append(PageBreak())
+        
+        enriched, stats = all_stats[idx]
+        
+        story.append(make_header(S, provider_name, provider_info, client_name, client_info))
+        story.append(Spacer(1, 3*mm))
+        story.append(Paragraph("RAPPORT INDIVIDUEL", S['ti']))
+        story.append(Paragraph(period, S['st']))
+        story.append(Paragraph(f"Employé : {emp['name']}  |  Réf : {emp['ref']}", S['ei']))
+        story.append(Spacer(1, 2*mm))
+        
+        # Summary: just days count
+        sum_hdrs = ["Nbre de jours à Effectuer", "Ponctuel", "Retard", "Absent", "Erreurs de Badge"]
+        sum_vals = [
+            f"{stats['days_required']} jours", f"{stats['days_punctual']} jours",
+            f"{stats['days_late']} jours", f"{stats['days_absent']} jours", f"{stats['days_badge_error']} jours",
+        ]
+        sh = [Paragraph(x, S['sh']) for x in sum_hdrs]
+        sv = [Paragraph(x, S['sv']) for x in sum_vals]
+        sw = [36*mm, 30*mm, 28*mm, 28*mm, 28*mm]
+        stbl = Table([sh, sv], colWidths=sw)
+        stbl.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),TEAL),
+            ('GRID',(0,0),(-1,-1),0.4,colors.grey),
+            ('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
+        ]))
+        story.extend([stbl, Spacer(1, 2*mm)])
+        
+        # Hours summary row
+        hrs_hdrs = ["Total heure obligatoire", "Présence", "Retard", "Absent"]
+        hrs_vals = [
+            m2h(stats['total_required']) + " heures",
+            m2h(stats['total_worked']) + " heures",
+            m2h(stats['total_late_mins']) + " heures",
+            m2h(stats['days_absent'] * (stats['total_required'] // max(stats['days_required'],1))) + " heures",
+        ]
+        hh = [Paragraph(x, S['sh']) for x in hrs_hdrs]
+        hv = [Paragraph(x, S['sv']) for x in hrs_vals]
+        hw = [40*mm, 40*mm, 35*mm, 35*mm]
+        htbl = Table([hh, hv], colWidths=hw)
+        htbl.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),TEAL),
+            ('GRID',(0,0),(-1,-1),0.4,colors.grey),
+            ('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+            ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
+        ]))
+        story.extend([htbl, Spacer(1, 3*mm)])
+        
+        # Detail table: simple — N°, Date, Emploi du temps, Arrivée, Départ
+        hdrs = ["N°", "Date", "Emploi du temps", "Heure d'arrivée", "Heure de départ"]
+        cw = [12*mm, 28*mm, 40*mm, 40*mm, 40*mm]
+        
+        td = [[Paragraph(x, S['h']) for x in hdrs]]
+        
+        for i, rec in enumerate(enriched, 1):
+            td.append([
+                Paragraph(str(i), S['c']),
+                Paragraph(rec['date'], S['c']),
+                Paragraph(rec['schedule'], S['c']),
+                Paragraph(rec['arrival'] if rec['arrival'] != '00:00' else '-', S['c']),
+                Paragraph(rec['departure'] if rec['departure'] != '00:00' else '-', S['c']),
+            ])
+        
+        dt = Table(td, colWidths=cw, repeatRows=1)
+        sc = [('BACKGROUND',(0,0),(-1,0),TEAL),
+              ('GRID',(0,0),(-1,-1),0.3,colors.grey),
+              ('ALIGN',(0,0),(-1,-1),'CENTER'),('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+              ('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2),
+              ('LEFTPADDING',(0,0),(-1,-1),2),('RIGHTPADDING',(0,0),(-1,-1),2)]
+        for i in range(2, len(td), 2):
+            sc.append(('BACKGROUND',(0,i),(-1,i),LGRAY))
+        dt.setStyle(TableStyle(sc))
+        story.append(dt)
+        
+        # Cost box if applicable
+        if stats.get('hourly_cost', 0) > 0:
+            story.append(Spacer(1, 2*mm))
+            fmt_cost = lambda x: f"{x:,.0f} FCFA"
+            total_lost = stats['cost_late'] + stats['cost_deficit'] + stats['cost_absent']
+            cost_data = [
+                [Paragraph("<b>💰 IMPACT FINANCIER</b>", ParagraphStyle('ct',fontName='Helvetica-Bold',fontSize=8,textColor=colors.white)),
+                 Paragraph(f"<b>Coût horaire : {fmt_cost(stats['hourly_cost'])}</b>", ParagraphStyle('ct2',fontName='Helvetica-Bold',fontSize=8,textColor=colors.white,alignment=2))],
+                [Paragraph(f"Perte retards ({m2h(stats['total_late_mins'])})", ParagraphStyle('cl',fontSize=7,textColor=DARK_TEAL)),
+                 Paragraph(f"<b>{fmt_cost(stats['cost_late'])}</b>", ParagraphStyle('cr',fontSize=8,fontName='Helvetica-Bold',textColor=RED,alignment=2))],
+                [Paragraph(f"Perte déficit ({m2h(stats['total_deficit'])})", ParagraphStyle('cl',fontSize=7,textColor=DARK_TEAL)),
+                 Paragraph(f"<b>{fmt_cost(stats['cost_deficit'])}</b>", ParagraphStyle('cr',fontSize=8,fontName='Helvetica-Bold',textColor=RED,alignment=2))],
+                [Paragraph(f"Perte absences ({stats['days_absent']}j)", ParagraphStyle('cl',fontSize=7,textColor=DARK_TEAL)),
+                 Paragraph(f"<b>{fmt_cost(stats['cost_absent'])}</b>", ParagraphStyle('cr',fontSize=8,fontName='Helvetica-Bold',textColor=RED,alignment=2))],
+                [Paragraph("<b>TOTAL GAIN PERDU</b>", ParagraphStyle('ct3',fontName='Helvetica-Bold',fontSize=8,textColor=RED)),
+                 Paragraph(f"<b>{fmt_cost(total_lost)}</b>", ParagraphStyle('ct4',fontName='Helvetica-Bold',fontSize=9,textColor=RED,alignment=2))],
+            ]
+            ct = Table(cost_data, colWidths=[100*mm, 60*mm])
+            ct.setStyle(TableStyle([
+                ('BACKGROUND',(0,0),(-1,0),DARK_TEAL),('BACKGROUND',(0,-1),(-1,-1),HexColor('#fff3e0')),
+                ('BOX',(0,0),(-1,-1),1,DARK_TEAL),('INNERGRID',(0,0),(-1,-1),0.3,colors.grey),
+                ('VALIGN',(0,0),(-1,-1),'MIDDLE'),('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
+                ('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),6),
+            ]))
+            story.append(ct)
+        
+        story.append(Spacer(1, 2*mm))
+        story.append(Paragraph(f"Imprimé par : RH, le {now}", S['ft']))
+
+
 # ======================== GENERATION PDF COMPLETE ========================
 
-def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0):
+def generate_full_pdf(emps, output_path, provider_name, provider_info, client_name, period, logo_path=None, hp=0, client_info="", work_dir=None, hp_weekend=0, hourly_cost=0, employee_costs=None, report_type='full'):
+    if not employee_costs: employee_costs = {}
     if not work_dir:
         work_dir = os.path.dirname(os.path.abspath(output_path))
     doc = SimpleDocTemplate(output_path, pagesize=A4,
@@ -768,20 +998,27 @@ def generate_full_pdf(emps, output_path, provider_name, provider_info, client_na
     story = []
     now = datetime.now().strftime("%d/%m/%Y à %H:%M")
     
-    # Pré-calculer toutes les stats
-    all_stats = [calc_employee_stats(emp, hp, hp_weekend) for emp in emps]
+    # Pré-calculer toutes les stats avec coût par employé
+    all_stats = []
+    for emp in emps:
+        emp_cost = employee_costs.get(emp['name'], hourly_cost)
+        all_stats.append(calc_employee_stats(emp, hp, hp_weekend, emp_cost))
     
     # 1. Rapports individuels
-    gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now)
+    if report_type == 'simple':
+        gen_simple_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now)
+    else:
+        gen_individual_pages(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, period, now)
     
-    # 2. Rapport de présence
-    gen_rapport_presence(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now)
-    
-    # 3. Classement retards & absences
-    gen_classement(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now)
-    
-    # 4. Graphique d'assiduité
-    gen_graphique(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now, logo_path, work_dir)
+    if report_type == 'full':
+        # 2. Rapport de présence
+        gen_rapport_presence(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now)
+        
+        # 3. Classement retards & absences
+        gen_classement(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now)
+        
+        # 4. Graphique d'assiduité
+        gen_graphique(story, emps, all_stats, S, provider_name, provider_info, client_name, client_info, now, logo_path, work_dir)
     
     doc.build(story)
 
