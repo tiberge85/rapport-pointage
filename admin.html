@@ -27,12 +27,13 @@
                     <td>{% if u.is_active %}<span style="color:#2e7d32">●</span> Actif{% else %}<span style="color:#c53030">●</span> Inactif{% endif %}</td>
                     <td style="display:flex;gap:6px">
                         <a href="/admin/edit/{{ u.id }}" class="btn btn-outline btn-sm">✏️</a>
-                        {% if u.role != 'admin' %}
+                        {% if u.role != 'admin' or u.username != 'admin' %}
                         {% if u.is_active %}
                         <a href="/admin/toggle/{{ u.id }}" class="btn btn-danger btn-sm" onclick="return confirm('Désactiver cet utilisateur ?')">🔒</a>
                         {% else %}
                         <a href="/admin/toggle/{{ u.id }}" class="btn btn-primary btn-sm">🔓</a>
                         {% endif %}
+                        <a href="/admin/delete/{{ u.id }}" class="btn btn-sm" style="color:#c53030" onclick="return confirm('⚠️ SUPPRIMER définitivement le compte {{ u.full_name }} ({{ u.username }}) ?\n\nCette action est irréversible.')">🗑️</a>
                         {% endif %}
                     </td>
                 </tr>

@@ -87,6 +87,8 @@ migrate_caisse_v2()
 migrate_v6()
 from models import migrate_v7
 migrate_v7()
+from models import migrate_v8
+migrate_v8()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -97,7 +99,9 @@ from models import (init_devis_tables, create_devis, get_all_devis, get_devis_by
 init_devis_tables()
 
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
-ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'admin', 'dashboard', 'envoyer', 'logs', 'contrats', 'comptabilite', 'visites', 'proforma', 'moyens_generaux', 'informatique', 'projets', 'caisse_sortie']
+ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'envoyer', 'logs', 
+                   'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit',
+                   'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j']
 
 def allowed_file(fn):
     return '.' in fn and fn.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -135,8 +139,10 @@ def inject_globals():
     if 'user_id' in session:
         user = get_user_by_id(session['user_id'])
         if user:
+            perms = get_role_permissions(user['role'])
             ctx['current_user'] = user
-            ctx['permissions'] = get_role_permissions(user['role'])
+            ctx['permissions'] = perms
+            ctx['can_edit'] = lambda module: (module + '_edit') in perms or 'admin' in perms
             ctx['pending_count'] = len(get_jobs_by_status('traite'))
             try: ctx['unread_messages'] = get_unread_count(user['id'])
             except: pass
@@ -147,6 +153,8 @@ def inject_globals():
                     ctx['caisse_pending'] = _c.execute("SELECT COUNT(*) FROM caisse_sorties WHERE status='en_attente'").fetchone()[0]
                     _c.close()
                 except: pass
+    else:
+        ctx['can_edit'] = lambda module: False
     return ctx
 
 
@@ -573,7 +581,7 @@ def clients_page():
     return render_template('clients.html', page='clients', clients=clients)
 
 @app.route('/clients/add', methods=['POST'])
-@permission_required('clients')
+@permission_required('clients_edit')
 def clients_add():
     create_client(
         request.form['name'], request.form.get('tel', ''),
@@ -601,7 +609,7 @@ def clients_add():
     return redirect(url_for('clients_page'))
 
 @app.route('/clients/edit/<int:cid>', methods=['GET', 'POST'])
-@permission_required('clients')
+@permission_required('clients_edit')
 def clients_edit(cid):
     client = get_client_by_id(cid)
     if not client:
@@ -631,7 +639,7 @@ def clients_edit(cid):
     return render_template('edit_client.html', page='clients', client=client)
 
 @app.route('/clients/delete/<int:cid>')
-@permission_required('clients')
+@permission_required('clients_edit')
 def clients_delete(cid):
     delete_client(cid)
     flash("Client supprimé", "success")
@@ -723,6 +731,24 @@ def admin_toggle_user(uid):
     if u and u['role'] != 'admin':
         update_user(uid, is_active=0 if u['is_active'] else 1)
         flash(f"Utilisateur {'désactivé' if u['is_active'] else 'activé'}", "success")
+    return redirect(url_for('admin_page'))
+
+@app.route('/admin/delete/<int:uid>')
+@permission_required('admin')
+def admin_delete_user(uid):
+    u = get_user_by_id(uid)
+    if not u:
+        flash("Utilisateur non trouvé", "error")
+    elif u['role'] == 'admin' and u['username'] == 'admin':
+        flash("Impossible de supprimer le compte admin principal", "error")
+    elif uid == session.get('user_id'):
+        flash("Impossible de supprimer votre propre compte", "error")
+    else:
+        delete_user(uid)
+        user = get_user_by_id(session['user_id'])
+        log_activity(session['user_id'], user['full_name'] if user else '?',
+                    'Admin', f"Utilisateur {u['full_name']} ({u['username']}) supprimé", request.remote_addr)
+        flash(f"Compte '{u['username']}' supprimé définitivement", "success")
     return redirect(url_for('admin_page'))
 
 @app.route('/admin/permissions', methods=['POST'])
@@ -944,6 +970,182 @@ def alertes_page():
     # Trier: high en premier
     alerts.sort(key=lambda a: (0 if a['severity'] == 'high' else 1, a['client']))
     return render_template('alertes.html', page='alertes', alerts=alerts)
+
+
+# ======================== EMPLOI DU TEMPS & ANOMALIES ========================
+
+@app.route('/emploi-du-temps')
+@permission_required('traitement')
+def schedule_page():
+    conn = _gdb()
+    schedules = [dict(r) for r in conn.execute("SELECT * FROM schedules ORDER BY employee_name, day_of_week").fetchall()]
+    # Group by employee
+    emp_schedules = {}
+    for s in schedules:
+        name = s['employee_name']
+        if name not in emp_schedules: emp_schedules[name] = {}
+        emp_schedules[name][s['day_of_week']] = s
+    
+    # Get unique employee names from schedules + recent presence files
+    employees_set = set(s['employee_name'] for s in schedules)
+    anomalies = [dict(r) for r in conn.execute("""SELECT * FROM presence_anomalies 
+        ORDER BY date DESC LIMIT 100""").fetchall()]
+    conn.close()
+    
+    days = {0:'Lundi', 1:'Mardi', 2:'Mercredi', 3:'Jeudi', 4:'Vendredi', 5:'Samedi', 6:'Dimanche'}
+    return render_template('emploi_du_temps.html', page='schedule', emp_schedules=emp_schedules,
+        days=days, anomalies=anomalies, employees=sorted(employees_set))
+
+@app.route('/emploi-du-temps/add', methods=['POST'])
+@permission_required('traitement')
+def schedule_add():
+    name = request.form['employee_name'].strip()
+    start = request.form.get('start_time', '08:00')
+    end = request.form.get('end_time', '17:00')
+    bstart = request.form.get('break_start', '12:00')
+    bend = request.form.get('break_end', '13:00')
+    stype = request.form.get('schedule_type', 'standard')
+    
+    days = request.form.getlist('days')
+    if not days:
+        days = ['0','1','2','3','4']  # Lun-Ven par défaut
+    
+    conn = _gdb()
+    # Remove existing schedule for this employee
+    conn.execute("DELETE FROM schedules WHERE employee_name=?", (name,))
+    for d in days:
+        conn.execute("""INSERT INTO schedules (employee_name, day_of_week, start_time, end_time, 
+            break_start, break_end, schedule_type) VALUES (?,?,?,?,?,?,?)""",
+            (name, int(d), start, end, bstart, bend, stype))
+    conn.commit(); conn.close()
+    flash(f"Emploi du temps de {name} enregistré", "success")
+    return redirect('/emploi-du-temps')
+
+@app.route('/emploi-du-temps/delete/<path:name>')
+@permission_required('traitement')
+def schedule_delete(name):
+    from urllib.parse import unquote
+    name = unquote(name)
+    conn = _gdb()
+    conn.execute("DELETE FROM schedules WHERE employee_name=?", (name,))
+    conn.commit(); conn.close()
+    flash(f"Emploi du temps de {name} supprimé", "success")
+    return redirect('/emploi-du-temps')
+
+@app.route('/emploi-du-temps/detect-anomalies', methods=['POST'])
+@permission_required('traitement')
+def schedule_detect():
+    """Compare les fichiers de présence fusionnés avec les emplois du temps."""
+    merge_id = request.form.get('merge_id', '')
+    
+    # Load presence data from merged file
+    files_dir = app.config['FILES_FOLDER']
+    merge_dir = os.path.join(files_dir, 'merges')
+    xlsx_path = None
+    
+    if merge_id:
+        merge_path = os.path.join(merge_dir, merge_id)
+        if os.path.isdir(merge_path):
+            for f in os.listdir(merge_path):
+                if f.endswith('.xlsx'):
+                    xlsx_path = os.path.join(merge_path, f)
+                    break
+    
+    if not xlsx_path:
+        # Try latest merged file
+        jobs = get_all_jobs()
+        for job in reversed(jobs):
+            jdir = os.path.join(files_dir, job['job_id'])
+            if os.path.isdir(jdir):
+                for f in os.listdir(jdir):
+                    if f.endswith('.xlsx'):
+                        xlsx_path = os.path.join(jdir, f)
+                        break
+                if xlsx_path: break
+    
+    if not xlsx_path:
+        flash("Aucun fichier de présence trouvé. Traitez d'abord un fichier.", "error")
+        return redirect('/emploi-du-temps')
+    
+    # Load schedules
+    conn = _gdb()
+    scheds = [dict(r) for r in conn.execute("SELECT * FROM schedules").fetchall()]
+    sched_map = {}
+    for s in scheds:
+        name = s['employee_name']
+        if name not in sched_map: sched_map[name] = {}
+        sched_map[name][s['day_of_week']] = s
+    
+    # Parse presence file
+    try:
+        from rapport_core import extract_from_excel
+        emps, meta = extract_from_excel(xlsx_path)
+    except:
+        flash("Erreur de lecture du fichier de présence", "error")
+        conn.close()
+        return redirect('/emploi-du-temps')
+    
+    # Clear old anomalies
+    conn.execute("DELETE FROM presence_anomalies")
+    
+    anomaly_count = 0
+    for emp in emps:
+        name = emp.get('name', '').strip()
+        if name not in sched_map: continue
+        
+        for entry in emp.get('entries', []):
+            date = entry.get('date', '')
+            if not date: continue
+            
+            # Get day of week
+            try:
+                from datetime import datetime as dt2
+                d = dt2.strptime(date, '%Y-%m-%d')
+                dow = d.weekday()
+            except:
+                continue
+            
+            if dow not in sched_map[name]: continue
+            sched = sched_map[name][dow]
+            
+            actual_start = entry.get('start', '')
+            actual_end = entry.get('end', '')
+            exp_start = sched['start_time']
+            exp_end = sched['end_time']
+            
+            anomaly = None
+            if actual_start and exp_start:
+                # Compare times (simple string comparison works for HH:MM format)
+                if actual_start > exp_start and actual_start > (exp_start[:3] + str(int(exp_start[3:5]) + 15).zfill(2) if int(exp_start[3:5]) + 15 < 60 else exp_start):
+                    anomaly = 'retard'
+            if actual_end and exp_end:
+                if actual_end < exp_end and actual_end < exp_end:
+                    anomaly = anomaly + '+depart_anticipe' if anomaly else 'depart_anticipe'
+            if not actual_start and not actual_end:
+                anomaly = 'absence'
+            
+            if anomaly:
+                conn.execute("""INSERT INTO presence_anomalies 
+                    (employee_name, date, expected_start, expected_end, actual_start, actual_end, anomaly_type)
+                    VALUES (?,?,?,?,?,?,?)""",
+                    (name, date, exp_start, exp_end, actual_start or '', actual_end or '', anomaly))
+                anomaly_count += 1
+    
+    conn.commit(); conn.close()
+    flash(f"{anomaly_count} anomalie(s) détectée(s)", "info")
+    return redirect('/emploi-du-temps')
+
+@app.route('/emploi-du-temps/correct/<int:aid>', methods=['POST'])
+@permission_required('traitement')
+def schedule_correct(aid):
+    conn = _gdb()
+    conn.execute("""UPDATE presence_anomalies SET status='corrigee', 
+        corrected_start=?, corrected_end=?, notes=? WHERE id=?""",
+        (request.form.get('corrected_start',''), request.form.get('corrected_end',''),
+         request.form.get('notes',''), aid))
+    conn.commit(); conn.close()
+    flash("Anomalie corrigée", "success")
+    return redirect('/emploi-du-temps')
 
 
 # ======================== ENVOI EMAIL ========================
@@ -1255,7 +1457,7 @@ def devis_page():
     return render_template('devis.html', page='devis', tab=tab, devis_list=devis_list, d_stats=d_stats)
 
 @app.route('/devis/new', methods=['GET', 'POST'])
-@permission_required('proforma')
+@permission_required('proforma_edit')
 def devis_new():
     if request.method == 'POST':
         items = []
@@ -1321,7 +1523,7 @@ def devis_pdf(did):
     return send_file(output, as_attachment=True, download_name=f"{devis['reference']}.pdf")
 
 @app.route('/devis/status/<int:did>/<status>')
-@permission_required('proforma')
+@permission_required('proforma_edit')
 def devis_status(did, status):
     if status in ('brouillon', 'envoye', 'accepte', 'refuse'):
         update_devis_status(did, status)
@@ -1349,7 +1551,7 @@ def devis_status(did, status):
     return redirect(url_for('devis_page'))
 
 @app.route('/devis/edit/<int:did>', methods=['GET', 'POST'])
-@permission_required('proforma')
+@permission_required('proforma_edit')
 def devis_edit(did):
     devis = get_devis_by_id(did)
     if not devis: flash("Devis non trouvé", "error"); return redirect(url_for('devis_page'))
@@ -1388,7 +1590,7 @@ def devis_edit(did):
     return render_template('devis_edit.html', page='devis', devis=devis, items=items, clients=clients, stock_items=stock_items)
 
 @app.route('/devis/delete/<int:did>')
-@permission_required('proforma')
+@permission_required('proforma_edit')
 def devis_delete(did):
     conn = _gdb()
     conn.execute("DELETE FROM devis WHERE id=?", (did,))
@@ -1396,7 +1598,7 @@ def devis_delete(did):
     flash("Devis supprimé", "success"); return redirect(url_for('devis_page'))
 
 @app.route('/devis/duplicate/<int:did>')
-@permission_required('proforma')
+@permission_required('proforma_edit')
 def devis_duplicate(did):
     devis = get_devis_by_id(did)
     if devis:
@@ -2299,7 +2501,7 @@ def devis_templates_page():
     return render_template('devis_templates.html', page='devis', templates=templates)
 
 @app.route('/devis/templates/add', methods=['POST'])
-@permission_required('proforma')
+@permission_required('proforma_edit')
 def devis_templates_add():
     from models import db_insert
     items = []
@@ -2319,7 +2521,7 @@ def devis_templates_add():
     return redirect(url_for('devis_templates_page'))
 
 @app.route('/devis/from-template/<int:tid>')
-@permission_required('proforma')
+@permission_required('proforma_edit')
 def devis_from_template(tid):
     tpl = get_devis_template(tid)
     if not tpl:
@@ -2831,7 +3033,7 @@ def achats_page():
     return render_template('achats.html', page='achats', **data)
 
 @app.route('/achats/fournisseur/add', methods=['POST'])
-@permission_required('comptabilite')
+@permission_required('comptabilite_edit')
 def achats_fournisseur_add():
     _dbi('achats_fournisseurs', name=request.form['name'], contact_name=request.form.get('contact_name',''),
         tel=request.form.get('tel',''), email=request.form.get('email',''),
@@ -2840,7 +3042,7 @@ def achats_fournisseur_add():
     flash("Fournisseur ajouté", "success"); return redirect('/achats?tab=fournisseurs')
 
 @app.route('/achats/fournisseur/edit/<int:fid>', methods=['POST'])
-@permission_required('comptabilite')
+@permission_required('comptabilite_edit')
 def achats_fournisseur_edit(fid):
     conn = _gdb()
     conn.execute("""UPDATE achats_fournisseurs SET name=?,contact_name=?,tel=?,email=?,address=?,city=?,sector=?,payment_terms=?,notes=? WHERE id=?""",
@@ -2851,13 +3053,13 @@ def achats_fournisseur_edit(fid):
     flash("Fournisseur modifié", "success"); return redirect('/achats?tab=fournisseurs')
 
 @app.route('/achats/fournisseur/delete/<int:fid>')
-@permission_required('comptabilite')
+@permission_required('comptabilite_edit')
 def achats_fournisseur_delete(fid):
     conn = _gdb(); conn.execute("DELETE FROM achats_fournisseurs WHERE id=?", (fid,)); conn.commit(); conn.close()
     flash("Fournisseur supprimé", "success"); return redirect('/achats?tab=fournisseurs')
 
 @app.route('/achats/demande/add', methods=['POST'])
-@permission_required('comptabilite')
+@permission_required('comptabilite_edit')
 def achats_demande_add():
     ref = f"DA-{datetime.now().strftime('%Y%m%d%H%M%S')}"
     _dbi('achats_demandes', reference=ref, date=request.form.get('date', datetime.now().strftime('%Y-%m-%d')),
@@ -2866,7 +3068,7 @@ def achats_demande_add():
     flash(f"Demande {ref} créée", "success"); return redirect('/achats?tab=demandes')
 
 @app.route('/achats/demande/<int:did>/approve')
-@permission_required('comptabilite')
+@permission_required('comptabilite_edit')
 def achats_demande_approve(did):
     conn = _gdb()
     conn.execute("UPDATE achats_demandes SET status='approuvee', approved_by=?, approved_at=CURRENT_TIMESTAMP WHERE id=?",
@@ -2875,7 +3077,7 @@ def achats_demande_approve(did):
     flash("Demande approuvée", "success"); return redirect('/achats?tab=demandes')
 
 @app.route('/achats/demande/<int:did>/reject')
-@permission_required('comptabilite')
+@permission_required('comptabilite_edit')
 def achats_demande_reject(did):
     conn = _gdb()
     conn.execute("UPDATE achats_demandes SET status='refusee' WHERE id=?", (did,))
@@ -2883,7 +3085,7 @@ def achats_demande_reject(did):
     flash("Demande refusée", "success"); return redirect('/achats?tab=demandes')
 
 @app.route('/achats/devis/add', methods=['POST'])
-@permission_required('comptabilite')
+@permission_required('proforma_edit')
 def achats_devis_add():
     ref = f"DAC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
     total_ht = float(request.form.get('total_ht', 0) or 0)
@@ -2896,14 +3098,14 @@ def achats_devis_add():
     flash(f"Devis fournisseur {ref} enregistré", "success"); return redirect('/achats?tab=devis')
 
 @app.route('/achats/devis/<int:did>/status/<status>')
-@permission_required('comptabilite')
+@permission_required('proforma_edit')
 def achats_devis_status(did, status):
     if status in ('en_attente', 'accepte', 'refuse'):
         conn = _gdb(); conn.execute("UPDATE achats_devis SET status=? WHERE id=?", (status, did)); conn.commit(); conn.close()
     flash("Statut mis à jour", "success"); return redirect('/achats?tab=devis')
 
 @app.route('/achats/commande/add', methods=['POST'])
-@permission_required('comptabilite')
+@permission_required('comptabilite_edit')
 def achats_commande_add():
     ref = f"BC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
     _dbi('achats_commandes', reference=ref, fournisseur_id=int(request.form.get('fournisseur_id',0) or 0),
@@ -2915,14 +3117,14 @@ def achats_commande_add():
     flash(f"Bon de commande {ref} créé", "success"); return redirect('/achats?tab=commandes')
 
 @app.route('/achats/commande/<int:cid>/status/<status>')
-@permission_required('comptabilite')
+@permission_required('comptabilite_edit')
 def achats_commande_status(cid, status):
     if status in ('en_cours', 'livree', 'annulee'):
         conn = _gdb(); conn.execute("UPDATE achats_commandes SET status=? WHERE id=?", (status, cid)); conn.commit(); conn.close()
     flash("Statut mis à jour", "success"); return redirect('/achats?tab=commandes')
 
 @app.route('/achats/contrat/add', methods=['POST'])
-@permission_required('comptabilite')
+@permission_required('comptabilite_edit')
 def achats_contrat_add():
     ref = f"CTR-{datetime.now().strftime('%Y%m%d%H%M%S')}"
     _dbi('achats_contrats', reference=ref, fournisseur_id=int(request.form.get('fournisseur_id',0) or 0),

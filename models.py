@@ -196,13 +196,13 @@ def init_db():
     
     # Permissions par défaut — tous les rôles
     default_perms = {
-        'admin': ['traitement', 'fichiers', 'clients', 'admin', 'dashboard', 'envoyer', 'logs', 'contrats', 'comptabilite', 'visites', 'proforma', 'moyens_generaux', 'informatique', 'projets', 'caisse_sortie', 'rapports_j'],
-        'dg': ['traitement', 'fichiers', 'clients', 'admin', 'dashboard', 'envoyer', 'logs', 'contrats', 'comptabilite', 'visites', 'proforma', 'moyens_generaux', 'informatique', 'projets', 'caisse_sortie', 'rapports_j'],
+        'admin': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j'],
+        'dg': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j'],
         'rh': ['fichiers', 'clients', 'dashboard', 'envoyer', 'contrats', 'rapports_j'],
         'technicien': ['traitement', 'dashboard', 'visites', 'rapports_j'],
-        'commercial': ['dashboard', 'clients', 'visites', 'proforma', 'contrats', 'rapports_j'],
-        'comptable': ['dashboard', 'comptabilite', 'clients', 'caisse_sortie', 'rapports_j'],
-        'moyens_generaux': ['dashboard', 'moyens_generaux', 'clients', 'rapports_j'],
+        'commercial': ['dashboard', 'clients', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'contrats', 'rapports_j'],
+        'comptable': ['dashboard', 'comptabilite', 'comptabilite_edit', 'clients', 'caisse_sortie', 'rapports_j'],
+        'moyens_generaux': ['dashboard', 'moyens_generaux', 'moyens_generaux_edit', 'clients', 'rapports_j'],
         'informatique': ['dashboard', 'informatique', 'traitement', 'visites', 'projets', 'rapports_j'],
     }
     for role, perms in default_perms.items():
@@ -1837,4 +1837,41 @@ def migrate_v7():
     # Stock image
     try: conn.execute("ALTER TABLE stock_items ADD COLUMN image TEXT DEFAULT ''")
     except: pass
+    conn.commit(); conn.close()
+
+
+# ======================== MIGRATION V8 — EMPLOI DU TEMPS ========================
+
+def migrate_v8():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS schedules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_name TEXT NOT NULL,
+            day_of_week INTEGER,
+            start_time TEXT DEFAULT '08:00',
+            end_time TEXT DEFAULT '17:00',
+            break_start TEXT DEFAULT '12:00',
+            break_end TEXT DEFAULT '13:00',
+            schedule_type TEXT DEFAULT 'standard',
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS presence_anomalies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            merge_id INTEGER,
+            employee_name TEXT,
+            date TEXT,
+            expected_start TEXT,
+            expected_end TEXT,
+            actual_start TEXT,
+            actual_end TEXT,
+            anomaly_type TEXT,
+            status TEXT DEFAULT 'detectee',
+            corrected_start TEXT,
+            corrected_end TEXT,
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
     conn.commit(); conn.close()
