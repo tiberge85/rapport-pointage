@@ -324,6 +324,8 @@ def traitement_preview():
         path = os.path.join(job_dir, secure_filename(file.filename))
         file.save(path)
         emps, client = extract_from_excel(path)
+        from models import save_known_employees
+        save_known_employees([e['name'] for e in emps])
         return jsonify({"client": client, "count": len(emps),
             "employees": [{"name": e['name'], "ref": e['ref'], "days": len(e['records'])} for e in emps]})
     except Exception as e:
@@ -351,6 +353,10 @@ def traitement_merge():
         if not result:
             return jsonify({"error": "Échec de la fusion."}), 400
         merge_id = os.path.basename(merge_dir)
+        # Save employee names for schedule
+        if result.get('employees'):
+            from models import save_known_employees
+            save_known_employees(result['employees'])
         return jsonify({"success": True, "merge_id": merge_id, "client": result['client'],
             "employees": result['employees'], "rows": result['rows'], "filename": 'Presence_fusionnee.xlsx'})
     except Exception as e:
@@ -451,6 +457,8 @@ def traitement_generate():
                     break
         
         emps, detected_client = extract_from_excel(xlsx_path)
+        from models import save_known_employees
+        save_known_employees([e['name'] for e in emps])
         if not emps:
             flash("Aucun employé trouvé", "error")
             return redirect(url_for('traitement'))
@@ -979,27 +987,33 @@ def alertes_page():
 def schedule_page():
     conn = _gdb()
     schedules = [dict(r) for r in conn.execute("SELECT * FROM schedules ORDER BY employee_name, day_of_week").fetchall()]
-    # Group by employee
     emp_schedules = {}
     for s in schedules:
         name = s['employee_name']
         if name not in emp_schedules: emp_schedules[name] = {}
         emp_schedules[name][s['day_of_week']] = s
     
-    # Get unique employee names from schedules + recent presence files
-    employees_set = set(s['employee_name'] for s in schedules)
     anomalies = [dict(r) for r in conn.execute("""SELECT * FROM presence_anomalies 
         ORDER BY date DESC LIMIT 100""").fetchall()]
     conn.close()
     
+    # Collect employee names from DB (saved when files are processed)
+    from models import get_known_employees
+    all_employees = set(get_known_employees())
+    all_employees.update(s['employee_name'] for s in schedules)
+    
     days = {0:'Lundi', 1:'Mardi', 2:'Mercredi', 3:'Jeudi', 4:'Vendredi', 5:'Samedi', 6:'Dimanche'}
     return render_template('emploi_du_temps.html', page='schedule', emp_schedules=emp_schedules,
-        days=days, anomalies=anomalies, employees=sorted(employees_set))
+        days=days, anomalies=anomalies, employees=sorted(all_employees))
 
 @app.route('/emploi-du-temps/add', methods=['POST'])
 @permission_required('traitement')
 def schedule_add():
-    name = request.form['employee_name'].strip()
+    names = request.form.getlist('employee_names')  # Multi-select
+    if not names:
+        single = request.form.get('employee_name', '').strip()
+        if single: names = [single]
+    
     start = request.form.get('start_time', '08:00')
     end = request.form.get('end_time', '17:00')
     bstart = request.form.get('break_start', '12:00')
@@ -1008,17 +1022,19 @@ def schedule_add():
     
     days = request.form.getlist('days')
     if not days:
-        days = ['0','1','2','3','4']  # Lun-Ven par défaut
+        days = ['0','1','2','3','4']
     
     conn = _gdb()
-    # Remove existing schedule for this employee
-    conn.execute("DELETE FROM schedules WHERE employee_name=?", (name,))
-    for d in days:
-        conn.execute("""INSERT INTO schedules (employee_name, day_of_week, start_time, end_time, 
-            break_start, break_end, schedule_type) VALUES (?,?,?,?,?,?,?)""",
-            (name, int(d), start, end, bstart, bend, stype))
+    for name in names:
+        name = name.strip()
+        if not name: continue
+        conn.execute("DELETE FROM schedules WHERE employee_name=?", (name,))
+        for d in days:
+            conn.execute("""INSERT INTO schedules (employee_name, day_of_week, start_time, end_time, 
+                break_start, break_end, schedule_type) VALUES (?,?,?,?,?,?,?)""",
+                (name, int(d), start, end, bstart, bend, stype))
     conn.commit(); conn.close()
-    flash(f"Emploi du temps de {name} enregistré", "success")
+    flash(f"Emploi du temps enregistré pour {len(names)} personne(s)", "success")
     return redirect('/emploi-du-temps')
 
 @app.route('/emploi-du-temps/delete/<path:name>')
@@ -1035,39 +1051,27 @@ def schedule_delete(name):
 @app.route('/emploi-du-temps/detect-anomalies', methods=['POST'])
 @permission_required('traitement')
 def schedule_detect():
-    """Compare les fichiers de présence fusionnés avec les emplois du temps."""
-    merge_id = request.form.get('merge_id', '')
+    """Compare les fichiers de présence avec les emplois du temps définis."""
     
-    # Load presence data from merged file
-    files_dir = app.config['FILES_FOLDER']
-    merge_dir = os.path.join(files_dir, 'merges')
+    files_dir = app.config.get('FILES_FOLDER', 'files')
     xlsx_path = None
     
-    if merge_id:
-        merge_path = os.path.join(merge_dir, merge_id)
-        if os.path.isdir(merge_path):
-            for f in os.listdir(merge_path):
+    # Find latest presence file
+    jobs = get_all_jobs()
+    for job in reversed(jobs):
+        jdir = os.path.join(files_dir, job['job_id'])
+        if os.path.isdir(jdir):
+            for f in os.listdir(jdir):
                 if f.endswith('.xlsx'):
-                    xlsx_path = os.path.join(merge_path, f)
+                    xlsx_path = os.path.join(jdir, f)
                     break
-    
-    if not xlsx_path:
-        # Try latest merged file
-        jobs = get_all_jobs()
-        for job in reversed(jobs):
-            jdir = os.path.join(files_dir, job['job_id'])
-            if os.path.isdir(jdir):
-                for f in os.listdir(jdir):
-                    if f.endswith('.xlsx'):
-                        xlsx_path = os.path.join(jdir, f)
-                        break
-                if xlsx_path: break
+            if xlsx_path: break
     
     if not xlsx_path:
         flash("Aucun fichier de présence trouvé. Traitez d'abord un fichier.", "error")
         return redirect('/emploi-du-temps')
     
-    # Load schedules
+    # Load our defined schedules
     conn = _gdb()
     scheds = [dict(r) for r in conn.execute("SELECT * FROM schedules").fetchall()]
     sched_map = {}
@@ -1078,61 +1082,86 @@ def schedule_detect():
     
     # Parse presence file
     try:
-        from rapport_core import extract_from_excel
         emps, meta = extract_from_excel(xlsx_path)
-    except:
-        flash("Erreur de lecture du fichier de présence", "error")
+    except Exception as e:
+        flash(f"Erreur lecture fichier: {e}", "error")
         conn.close()
         return redirect('/emploi-du-temps')
     
     # Clear old anomalies
     conn.execute("DELETE FROM presence_anomalies")
     
+    def time_to_min(t):
+        """Convertit HH:MM en minutes depuis minuit."""
+        if not t or len(t) < 4: return None
+        try:
+            parts = t.replace('h',':').split(':')
+            return int(parts[0]) * 60 + int(parts[1])
+        except: return None
+    
     anomaly_count = 0
+    tolerance = 15  # minutes de tolérance
+    
     for emp in emps:
         name = emp.get('name', '').strip()
         if name not in sched_map: continue
         
-        for entry in emp.get('entries', []):
-            date = entry.get('date', '')
+        for rec in emp.get('records', []):
+            date = rec.get('date', '')
             if not date: continue
             
-            # Get day of week
             try:
                 from datetime import datetime as dt2
-                d = dt2.strptime(date, '%Y-%m-%d')
+                d = dt2.strptime(date[:10], '%Y-%m-%d')
                 dow = d.weekday()
-            except:
-                continue
+            except: continue
             
             if dow not in sched_map[name]: continue
             sched = sched_map[name][dow]
             
-            actual_start = entry.get('start', '')
-            actual_end = entry.get('end', '')
+            actual_arr = rec.get('arrival', '').strip()
+            actual_dep = rec.get('departure', '').strip()
             exp_start = sched['start_time']
             exp_end = sched['end_time']
             
-            anomaly = None
-            if actual_start and exp_start:
-                # Compare times (simple string comparison works for HH:MM format)
-                if actual_start > exp_start and actual_start > (exp_start[:3] + str(int(exp_start[3:5]) + 15).zfill(2) if int(exp_start[3:5]) + 15 < 60 else exp_start):
-                    anomaly = 'retard'
-            if actual_end and exp_end:
-                if actual_end < exp_end and actual_end < exp_end:
-                    anomaly = anomaly + '+depart_anticipe' if anomaly else 'depart_anticipe'
-            if not actual_start and not actual_end:
-                anomaly = 'absence'
+            exp_s = time_to_min(exp_start)
+            exp_e = time_to_min(exp_end)
+            act_s = time_to_min(actual_arr)
+            act_e = time_to_min(actual_dep)
             
-            if anomaly:
+            anomalies = []
+            
+            if not act_s and not act_e:
+                # Pas de pointage du tout
+                anomalies.append('absence')
+            elif act_s is not None and exp_s is not None:
+                # Retard : arrivée > prévu + tolérance
+                if act_s > exp_s + tolerance:
+                    anomalies.append('retard')
+                
+                # Horaire complètement décalé : arrivée APRÈS l'heure de fin prévue
+                # Ex: prévu 07:00-17:00 mais pointe à 17:00-21:00
+                if exp_e is not None and act_s >= exp_e:
+                    anomalies.append('horaire_decale')
+                
+                # Départ anticipé : départ > 30min avant la fin prévue
+                if act_e is not None and exp_e is not None and act_e < exp_e - 30:
+                    anomalies.append('depart_anticipe')
+                
+                # Arrivée très en avance (plus de 2h avant l'heure prévue)
+                if act_s < exp_s - 120:
+                    anomalies.append('horaire_decale')
+            
+            if anomalies:
+                anomaly_type = '+'.join(anomalies)
                 conn.execute("""INSERT INTO presence_anomalies 
                     (employee_name, date, expected_start, expected_end, actual_start, actual_end, anomaly_type)
                     VALUES (?,?,?,?,?,?,?)""",
-                    (name, date, exp_start, exp_end, actual_start or '', actual_end or '', anomaly))
+                    (name, date, exp_start, exp_end, actual_arr or '', actual_dep or '', anomaly_type))
                 anomaly_count += 1
     
     conn.commit(); conn.close()
-    flash(f"{anomaly_count} anomalie(s) détectée(s)", "info")
+    flash(f"{anomaly_count} anomalie(s) détectée(s) sur {len(emps)} employés", "info")
     return redirect('/emploi-du-temps')
 
 @app.route('/emploi-du-temps/correct/<int:aid>', methods=['POST'])

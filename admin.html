@@ -46,28 +46,54 @@
 
 <!-- Permissions -->
 <div class="card">
-    <div class="card-header"><h3>🔑 Permissions par rôle</h3></div>
+    <div class="card-header"><h3>🔑 Permissions par rôle</h3>
+        <span style="font-size:11px;color:#888">👁️ = Consultation · ✏️ = Modification</span>
+    </div>
     <div class="card-body">
         <form method="post" action="/admin/permissions">
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Permission</th>
+                    <thead><tr><th style="min-width:180px">Module</th>
                     {% for role in ['admin','dg','rh','technicien','commercial','comptable','moyens_generaux','informatique'] %}
-                    <th style="font-size:11px;text-align:center">{{ role }}</th>
+                    <th style="font-size:10px;text-align:center;writing-mode:vertical-lr;transform:rotate(180deg);height:80px">{{ role }}</th>
                     {% endfor %}</tr></thead>
                     <tbody>
-                    {% for perm in all_permissions %}
-                    <tr>
-                        <td><strong>{{ perm }}</strong></td>
+                    {% set perm_groups = [
+                        ('📊 Tableau de bord', 'dashboard', none),
+                        ('⏱️ Gestion du temps', 'traitement', none),
+                        ('📂 Fichiers / Rapports', 'fichiers', none),
+                        ('📧 Envoi email', 'envoyer', none),
+                        ('📋 Logs d\'activité', 'logs', none),
+                        ('👥 Clients — Consultation', 'clients', none),
+                        ('👥 Clients — Modification', 'clients_edit', 'clients'),
+                        ('📝 Devis — Consultation', 'proforma', none),
+                        ('📝 Devis — Modification', 'proforma_edit', 'proforma'),
+                        ('📋 Visites — Consultation', 'visites', none),
+                        ('📋 Visites — Modification', 'visites_edit', 'visites'),
+                        ('📄 Contrats', 'contrats', none),
+                        ('💰 Comptabilité — Consultation', 'comptabilite', none),
+                        ('💰 Comptabilité — Modification', 'comptabilite_edit', 'comptabilite'),
+                        ('💸 Caisse (sortie)', 'caisse_sortie', none),
+                        ('🏠 Moyens Généraux — Consultation', 'moyens_generaux', none),
+                        ('🏠 Moyens Généraux — Modification', 'moyens_generaux_edit', 'moyens_generaux'),
+                        ('💻 Informatique', 'informatique', none),
+                        ('📁 Projets', 'projets', none),
+                        ('📝 Rapports journaliers', 'rapports_j', none),
+                        ('⚙️ Administration', 'admin', none),
+                    ] %}
+                    {% for label, perm, parent in perm_groups %}
+                    <tr style="{% if '_edit' in perm or 'Modification' in label %}background:#fef9e7{% endif %}">
+                        <td style="font-size:12px">{% if 'Modification' in label %}   <span style="color:#e8672a">✏️</span>{% elif 'Consultation' in label %}<span style="color:#1a7a6d">👁️</span>{% endif %} {{ label }}</td>
                         {% for role in ['admin','dg','rh','technicien','commercial','comptable','moyens_generaux','informatique'] %}
-                        <td style="text-align:center"><input type="checkbox" name="{{ role }}_{{ perm }}" {% if perm in role_perms.get(role, []) %}checked{% endif %} {% if role == 'admin' %}disabled checked{% endif %}></td>
+                        <td style="text-align:center"><input type="checkbox" name="{{ role }}_{{ perm }}" {% if perm in role_perms.get(role, []) %}checked{% endif %} {% if role == 'admin' %}disabled checked{% endif %} style="width:16px;height:16px"></td>
                         {% endfor %}
                     </tr>
                     {% endfor %}
                     </tbody>
                 </table>
             </div>
-            <div style="margin-top:14px;text-align:right">
+            <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:11px;color:#888">💡 Les lignes jaunes ✏️ contrôlent la création/modification. Sans ✏️, l'utilisateur ne peut que consulter.</span>
                 <button type="submit" class="btn btn-primary">💾 Sauvegarder les permissions</button>
             </div>
         </form>
