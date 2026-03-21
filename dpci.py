@@ -237,7 +237,7 @@ def calc_dpci_stats(emp, schedule=None, hourly_cost=0, hp=0, hp_weekend=0):
     return enriched, stats
 
 
-def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None, employee_costs=None, default_cost=0, hp=0, hp_weekend=0, provider_name=''):
+def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None, employee_costs=None, default_cost=0, hp=0, hp_weekend=0, provider_name='', treated_by=''):
     """Génère le rapport PDF DPCI — design identique à la fiche de présence."""
     if not schedules_map:
         schedules_map = {}
@@ -315,7 +315,7 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
             story.append(Spacer(1, 4 * mm))
 
             # RESUME 1 : JOURS
-            s1_h = ["Nbre de jours \u00e0 Effectuer", "Ponctuel", "Absent"]
+            s1_h = ["Nbre de jours \u00e0 Effectuer", "Ponctualité", "Absence"]
             s1_v = [f"{stats['days_required']} jours", f"{stats['days_punctual']} jours", f"{stats['days_absent']} jours"]
             cw1 = [pw * 0.40, pw * 0.30, pw * 0.30]
             t1 = Table([
@@ -332,7 +332,7 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
             story.extend([t1, Spacer(1, 2 * mm)])
 
             # RESUME 2 : HEURES
-            s2_h = ["Total heure obligatoire", "Pr\u00e9sence", "Absent"]
+            s2_h = ["Total heure obligatoire", "Pr\u00e9sence", "Absence"]
             abs_hrs = m2h(stats['days_absent'] * (stats['total_required'] // max(stats['days_required'], 1)))
             s2_v = [f"{m2h(stats['total_required'])} heures", f"{m2h(stats['total_worked'])} heures", f"{abs_hrs} heures"]
             t2 = Table([
@@ -349,23 +349,29 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
             story.extend([t2, Spacer(1, 4 * mm)])
 
             # TABLEAU DETAIL
-            hdrs = ["N\u00b0", "Date", "Emploi du temps", "Arriv\u00e9e", "D\u00e9but\npause",
-                    "Retour\npause", "D\u00e9part", "Pause", "H.\nobligatoire", "H.\ntravaill\u00e9es", "Respect"]
-            cw_d = [7*mm, 17*mm, 20*mm, 15*mm, 15*mm, 15*mm, 15*mm, 14*mm, 17*mm, 17*mm, 15*mm]
+            hdrs = ["Jour", "Date", "Emploi du\ntemps", "Heure\nd'arriv\u00e9e",
+                    "D\u00e9but de\npause", "Retour de\npause", "Heure de\nd\u00e9part", "Pause\neffectu\u00e9e",
+                    "H.\nobligatoire", "H.\ntravaill\u00e9es", "Emploi du temps\nrespect\u00e9"]
+            cw_d = [9*mm, 18*mm, 20*mm, 16*mm, 15*mm, 15*mm, 16*mm, 15*mm, 16*mm, 16*mm, 18*mm]
 
             td = [[Paragraph(x.replace("\n", "<br/>"), th) for x in hdrs]]
+
+            total_pause_mins = 0
 
             for i, rec in enumerate(enriched, 1):
                 sched_str = stats['sched_str']
                 resp = rec['respect']
                 if resp == 'OUI':
-                    rp = Paragraph("OUI", ParagraphStyle('g', fontName='Helvetica-Bold', fontSize=8, textColor=HexColor('#2e7d32'), alignment=TA_CENTER))
+                    rp = Paragraph("OUI", ParagraphStyle('g', fontName='Helvetica-Bold', fontSize=7, textColor=HexColor('#2e7d32'), alignment=TA_CENTER))
                 elif resp == 'ABS':
-                    rp = Paragraph("ABS", ParagraphStyle('r', fontName='Helvetica-Bold', fontSize=8, textColor=HexColor('#c53030'), alignment=TA_CENTER))
+                    rp = Paragraph("ABS", ParagraphStyle('r', fontName='Helvetica-Bold', fontSize=7, textColor=HexColor('#c53030'), alignment=TA_CENTER))
                 else:
-                    rp = Paragraph("NON", ParagraphStyle('r', fontName='Helvetica-Bold', fontSize=8, textColor=HexColor('#c53030'), alignment=TA_CENTER))
+                    rp = Paragraph("NON", ParagraphStyle('r', fontName='Helvetica-Bold', fontSize=7, textColor=HexColor('#c53030'), alignment=TA_CENTER))
 
                 req_display = rec.get('required', '') or m2h(stats['total_required'] // max(stats['days_required'], 1))
+
+                # Track pause total
+                total_pause_mins += t2m(rec.get('pause', '00:00'))
 
                 td.append([
                     Paragraph(str(i), tc),
@@ -389,15 +395,32 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
                 ('INNERGRID', (0, 0), (-1, -1), 0.3, BORDER_BL),
                 ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('TOPPADDING', (0, 0), (-1, -1), 4),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                ('LEFTPADDING', (0, 0), (-1, -1), 2),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ('LEFTPADDING', (0, 0), (-1, -1), 1),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 1),
             ]
             for i in range(2, len(td), 2):
                 sc.append(('BACKGROUND', (0, i), (-1, i), LGREY))
             dt.setStyle(TableStyle(sc))
             story.append(dt)
+
+            # RÉSUMÉ CUMULS EN BAS
+            story.append(Spacer(1, 3 * mm))
+            cum_h = ["Cumul pause effectu\u00e9e", "Cumul H. travaill\u00e9es", "Cumul H. obligatoire", "Taux pr\u00e9sence"]
+            cum_v = [f"{m2h(total_pause_mins)}", f"{m2h(stats['total_worked'])}", f"{m2h(stats['total_required'])}", f"{stats['presence_rate']}%"]
+            ct_cum = Table([
+                [Paragraph(x, hw) for x in cum_h],
+                [Paragraph(x, ParagraphStyle('cv', fontName='Helvetica-Bold', fontSize=9, alignment=TA_CENTER, textColor=BLK)) for x in cum_v],
+            ], colWidths=[pw * 0.25] * 4)
+            ct_cum.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), BLUE_DARK),
+                ('BOX', (0, 0), (-1, -1), 0.6, BORDER_BL),
+                ('INNERGRID', (0, 0), (-1, -1), 0.4, BORDER_BL),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'), ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ]))
+            story.append(ct_cum)
 
             # IMPACT FINANCIER (absences uniquement)
             if cost > 0 and stats['cost_absent'] > 0:
@@ -425,6 +448,6 @@ def generate_dpci_pdf(emps, output_path, client_name, period, schedules_map=None
 
             # FOOTER
             story.append(Spacer(1, 6 * mm))
-            story.append(Paragraph(f"Imprim\u00e9 par : RH, le {now}", ft_s))
+            story.append(Paragraph(f"Rapport trait\u00e9 par : {treated_by or 'Admin'}, le {now}", ft_s))
 
     doc.build(story)

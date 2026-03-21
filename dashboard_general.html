@@ -1,0 +1,97 @@
+{% extends "base.html" %}{% block title %}WannyGest - Tableau de bord général{% endblock %}{% block content %}
+<div class="page-header"><h1>📊 Tableau de bord général</h1><p>Vue consolidée de toutes les activités</p></div>
+
+<!-- KPIs principaux -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+    <div class="stat-card"><div class="stat-icon green">💵</div><div class="stat-info"><div class="stat-num" style="color:#2e7d32">{{ '{:,.0f}'.format(data.revenue) }}</div><div class="stat-label">Revenus (F)</div></div></div>
+    <div class="stat-card"><div class="stat-icon" style="background:#fde8e8;color:#c53030">📉</div><div class="stat-info"><div class="stat-num" style="color:#c53030">{{ '{:,.0f}'.format(data.expenses) }}</div><div class="stat-label">Dépenses (F)</div></div></div>
+    <div class="stat-card"><div class="stat-icon {% if data.profit >= 0 %}green{% else %}orange{% endif %}">{% if data.profit >= 0 %}📈{% else %}📉{% endif %}</div><div class="stat-info"><div class="stat-num" style="color:{% if data.profit >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(data.profit) }}</div><div class="stat-label">Bénéfice net (F)</div></div></div>
+    <div class="stat-card"><div class="stat-icon blue">👥</div><div class="stat-info"><div class="stat-num">{{ data.employees }}</div><div class="stat-label">Employés</div></div></div>
+</div>
+
+<!-- Sections par module -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+    <!-- CRM -->
+    <div class="card"><div class="card-header"><h3>🤝 CRM & Commercial</h3></div><div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ data.clients }}</div><div style="font-size:10px;color:#888">Clients</div></div>
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ data.prospects }}</div><div style="font-size:10px;color:#888">Prospects</div></div>
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ data.devis }}</div><div style="font-size:10px;color:#888">Devis total</div></div>
+            <div style="text-align:center;padding:10px;background:#e8f5e9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#2e7d32">{{ data.devis_acceptes }}</div><div style="font-size:10px;color:#888">Devis acceptés</div></div>
+        </div>
+    </div></div>
+    
+    <!-- Comptabilité -->
+    <div class="card"><div class="card-header"><h3>💰 Comptabilité</h3></div><div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ data.invoices }}</div><div style="font-size:10px;color:#888">Factures</div></div>
+            <div style="text-align:center;padding:10px;background:#e8f5e9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#2e7d32">{{ '{:,.0f}'.format(data.revenue) }}</div><div style="font-size:10px;color:#888">Encaissé (F)</div></div>
+            <div style="text-align:center;padding:10px;background:#fff3e0;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ '{:,.0f}'.format(data.expenses) }}</div><div style="font-size:10px;color:#888">Dépenses (F)</div></div>
+            <div style="text-align:center;padding:10px;{% if data.profit >= 0 %}background:#e8f5e9{% else %}background:#fde8e8{% endif %};border-radius:8px"><div style="font-size:22px;font-weight:800;color:{% if data.profit >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(data.profit) }}</div><div style="font-size:10px;color:#888">Bénéfice (F)</div></div>
+        </div>
+    </div></div>
+    
+    <!-- RH -->
+    <div class="card"><div class="card-header"><h3>👥 Ressources Humaines</h3></div><div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ data.employees }}</div><div style="font-size:10px;color:#888">Employés</div></div>
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ data.formations }}</div><div style="font-size:10px;color:#888">Formations</div></div>
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ data.annonces }}</div><div style="font-size:10px;color:#888">Annonces</div></div>
+        </div>
+    </div></div>
+    
+    <!-- Stock & Achats -->
+    <div class="card"><div class="card-header"><h3>📦 Stock & Achats</h3></div><div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ data.stock_items }}</div><div style="font-size:10px;color:#888">Articles</div></div>
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ '{:,.0f}'.format(data.stock_value) }}</div><div style="font-size:10px;color:#888">Valeur stock (F)</div></div>
+            <div style="text-align:center;padding:10px;{% if data.stock_low > 0 %}background:#fff3e0{% else %}background:#f8faf9{% endif %};border-radius:8px"><div style="font-size:22px;font-weight:800;color:{% if data.stock_low > 0 %}#c53030{% else %}#2e7d32{% endif %}">{{ data.stock_low }}</div><div style="font-size:10px;color:#888">Stock bas</div></div>
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ data.fournisseurs }}</div><div style="font-size:10px;color:#888">Fournisseurs</div></div>
+        </div>
+    </div></div>
+    
+    <!-- Gestion du temps -->
+    <div class="card"><div class="card-header"><h3>⏱️ Gestion du temps</h3></div><div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ data.rapports }}</div><div style="font-size:10px;color:#888">Rapports traités</div></div>
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ data.rapports_j }}</div><div style="font-size:10px;color:#888">Rapports journaliers</div></div>
+        </div>
+    </div></div>
+    
+    <!-- Informatique -->
+    <div class="card"><div class="card-header"><h3>💻 Informatique</h3></div><div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ data.projets }}</div><div style="font-size:10px;color:#888">Projets</div></div>
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ data.tickets }}</div><div style="font-size:10px;color:#888">Tickets</div></div>
+        </div>
+    </div></div>
+</div>
+
+<!-- Graphique revenus -->
+{% if data.monthly_rev %}
+<div class="card"><div class="card-header"><h3>📈 Revenus mensuels</h3></div><div class="card-body" style="height:200px">
+<canvas id="revChart"></canvas>
+</div></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<script>
+new Chart(document.getElementById('revChart'),{type:'bar',data:{
+    labels:{{ data.monthly_rev | map(attribute='month') | list | tojson }},
+    datasets:[{label:'Revenus',data:{{ data.monthly_rev | map(attribute='total') | list | tojson }},backgroundColor:'rgba(46,125,50,0.6)',borderRadius:4}]
+},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{callback:function(v){return (v/1000000).toFixed(1)+'M'}}}}}});
+</script>
+{% endif %}
+
+<!-- Activité récente -->
+{% if data.recent_logs %}
+<div class="card"><div class="card-header"><h3>🕐 Activité récente</h3></div><div class="card-body" style="padding:0">
+{% for log in data.recent_logs %}
+<div style="padding:8px 14px;border-bottom:1px solid #f0f0f0;display:flex;gap:10px;align-items:center;font-size:12px">
+    <span style="color:#888;min-width:120px;font-size:11px">{{ log.timestamp[:16] if log.timestamp else '' }}</span>
+    <strong style="min-width:100px;color:#1a3a5c">{{ log.user_name or '' }}</strong>
+    <span style="background:#e3f2fd;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;color:#1565c0;min-width:80px;text-align:center">{{ log.action_type or '' }}</span>
+    <span style="flex:1;color:#555">{{ log.details or '' }}</span>
+</div>
+{% endfor %}
+</div></div>
+{% endif %}
+{% endblock %}

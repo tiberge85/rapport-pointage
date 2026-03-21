@@ -99,7 +99,8 @@ from models import (init_devis_tables, create_devis, get_all_devis, get_devis_by
 init_devis_tables()
 
 ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
-ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'envoyer', 'logs', 
+ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general',
+                   'envoyer', 'logs', 
                    'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit',
                    'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j']
 
@@ -288,6 +289,56 @@ def dashboard():
                           inv_stats=inv_stats, v_stats=v_stats, d_stats=d_stats,
                           emp_stats=emp_stats, user_role=role,
                           announcements=announcements, trainings_upcoming=trainings_upcoming)
+
+@app.route('/dashboard-general')
+@permission_required('dashboard_general')
+def dashboard_general():
+    """Tableau de bord général — vue consolidée de toutes les activités."""
+    conn = _gdb()
+    data = {}
+    
+    # CRM
+    data['clients'] = conn.execute("SELECT COUNT(*) FROM clients").fetchone()[0]
+    data['prospects'] = conn.execute("SELECT COUNT(*) FROM prospects").fetchone()[0] if 'prospects' in _get_tables() else 0
+    data['devis'] = conn.execute("SELECT COUNT(*) FROM devis").fetchone()[0]
+    data['devis_acceptes'] = conn.execute("SELECT COUNT(*) FROM devis WHERE status='accepte'").fetchone()[0]
+    
+    # Comptabilité
+    data['invoices'] = conn.execute("SELECT COUNT(*) FROM invoices").fetchone()[0] if 'invoices' in _get_tables() else 0
+    data['revenue'] = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='payee'").fetchone()[0] if 'invoices' in _get_tables() else 0
+    data['expenses'] = conn.execute("SELECT COALESCE(SUM(amount),0) FROM pieces_caisse").fetchone()[0] if 'pieces_caisse' in _get_tables() else 0
+    data['profit'] = data['revenue'] - data['expenses']
+    
+    # RH
+    data['employees'] = conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0] if 'employees' in _get_tables() else 0
+    data['formations'] = conn.execute("SELECT COUNT(*) FROM rh_trainings").fetchone()[0] if 'rh_trainings' in _get_tables() else 0
+    data['annonces'] = conn.execute("SELECT COUNT(*) FROM rh_announcements").fetchone()[0] if 'rh_announcements' in _get_tables() else 0
+    
+    # Stock & Achats
+    data['stock_items'] = conn.execute("SELECT COUNT(*) FROM stock_items").fetchone()[0] if 'stock_items' in _get_tables() else 0
+    data['stock_value'] = conn.execute("SELECT COALESCE(SUM(quantity*unit_price),0) FROM stock_items").fetchone()[0] if 'stock_items' in _get_tables() else 0
+    data['stock_low'] = conn.execute("SELECT COUNT(*) FROM stock_items WHERE quantity<=min_stock").fetchone()[0] if 'stock_items' in _get_tables() else 0
+    data['fournisseurs'] = conn.execute("SELECT COUNT(*) FROM achats_fournisseurs").fetchone()[0] if 'achats_fournisseurs' in _get_tables() else 0
+    data['commandes'] = conn.execute("SELECT COUNT(*) FROM achats_commandes").fetchone()[0] if 'achats_commandes' in _get_tables() else 0
+    
+    # Gestion du temps
+    data['rapports'] = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] if 'jobs' in _get_tables() else 0
+    data['rapports_j'] = conn.execute("SELECT COUNT(*) FROM rapports_journaliers").fetchone()[0] if 'rapports_journaliers' in _get_tables() else 0
+    
+    # Informatique
+    data['projets'] = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0] if 'projects' in _get_tables() else 0
+    data['tickets'] = conn.execute("SELECT COUNT(*) FROM tickets").fetchone()[0] if 'tickets' in _get_tables() else 0
+    
+    # Recent activity
+    data['recent_logs'] = [dict(r) for r in conn.execute("""SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT 15""").fetchall()] if 'activity_log' in _get_tables() else []
+    
+    # Monthly revenue chart
+    data['monthly_rev'] = [dict(r) for r in conn.execute("""SELECT strftime('%Y-%m', created_at) as month, SUM(amount) as total 
+        FROM invoices WHERE status='payee' GROUP BY month ORDER BY month DESC LIMIT 6""").fetchall()] if 'invoices' in _get_tables() else []
+    data['monthly_rev'].reverse()
+    
+    conn.close()
+    return render_template('dashboard_general.html', page='dashboard_general', data=data)
 
 def _get_tables():
     from models import get_db
@@ -1289,7 +1340,40 @@ def dpci_generate():
             flash("Aucun employé trouvé dans le fichier", "error")
             return redirect('/dpci')
         
-        # Load schedules from DB
+        # Filter by period
+        period_mode = request.form.get('period_mode', 'all')
+        period_start = request.form.get('period_start', '').strip()
+        period_end = request.form.get('period_end', '').strip()
+        
+        if period_mode == 'day' and period_start:
+            period_end = period_start
+        elif period_mode == 'week' and period_start:
+            from datetime import datetime as dt2, timedelta
+            try:
+                d = dt2.strptime(period_start, '%Y-%m-%d')
+                period_end = (d + timedelta(days=6)).strftime('%Y-%m-%d')
+            except: pass
+        
+        if period_start or period_end:
+            for emp in emps:
+                emp['records'] = [r for r in emp['records'] 
+                    if (not period_start or r['date'] >= period_start) and 
+                       (not period_end or r['date'] <= period_end)]
+            emps = [e for e in emps if e['records']]
+        
+        if not emps:
+            flash("Aucun enregistrement pour la période sélectionnée", "error")
+            return redirect('/dpci')
+        
+        # Build period string
+        all_dates = sorted([r['date'] for e in emps for r in e['records']])
+        if all_dates:
+            period_str = f"Débuté le {all_dates[0]} au {all_dates[-1]}"
+        elif period:
+            parts = period.split(' - ')
+            period_str = f"Débuté le {parts[0].strip()} au {parts[-1].strip()}" if len(parts) > 1 else period
+        else:
+            period_str = "Rapport DPCI"
         conn = _gdb()
         scheds = [dict(r) for r in conn.execute("SELECT * FROM schedules").fetchall()]
         conn.close()
@@ -1301,20 +1385,16 @@ def dpci_generate():
                 schedules_map[name] = s  # Use first found (e.g., Monday schedule)
         
         # Generate PDF
-        if period and ' - ' in period:
-            parts = period.split(' - ')
-            period_str = f"Débuté le {parts[0].strip()} au {parts[1].strip()}"
-        elif period:
-            period_str = period
-        else:
-            period_str = "Rapport DPCI"
         pdf_name = f"DPCI_{client_name.replace(' ', '_')}_{job_id}.pdf"
         output_path = os.path.join(job_dir, pdf_name)
+        
+        user = get_user_by_id(session['user_id'])
+        treated_by = user['full_name'] if user else 'Admin'
         
         generate_dpci_pdf(emps, output_path, client_name, period_str,
                          schedules_map=schedules_map, employee_costs=employee_costs,
                          default_cost=default_cost, hp=hp, hp_weekend=hp_weekend,
-                         provider_name=provider_name)
+                         provider_name=provider_name, treated_by=treated_by)
         
         if not os.path.exists(output_path):
             flash("Erreur de génération PDF", "error")
