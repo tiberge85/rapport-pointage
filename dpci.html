@@ -44,8 +44,8 @@
             <div class="form-group"><label>Prestataire</label><input type="text" name="provider_name" value="RAMYA TECHNOLOGIE & INNOVATION" placeholder="Nom de l'entreprise"></div>
         </div>
         <div class="form-row">
-            <div class="form-group"><label style="font-size:12px;font-weight:600">Heures obligatoires (Lun-Ven)</label><input type="number" name="required_hours" min="0" max="24" step="0.5" value="0" style="width:120px"></div>
-            <div class="form-group"><label style="font-size:12px;font-weight:600">Heures obligatoires (Week-end)</label><input type="number" name="required_hours_weekend" min="0" max="24" step="0.5" value="0" style="width:120px"></div>
+            <div class="form-group"><label style="font-size:12px;font-weight:600">Heures obligatoires (Lun-Ven)</label><input type="number" name="required_hours" min="0" step="0.5" value="0" style="width:120px"></div>
+            <div class="form-group"><label style="font-size:12px;font-weight:600">Heures obligatoires (Week-end)</label><input type="number" name="required_hours_weekend" min="0" step="0.5" value="0" style="width:120px"></div>
         </div>
         <div class="form-row">
             <div class="form-group"><label style="font-size:12px;font-weight:600">Période du rapport</label>
@@ -66,7 +66,7 @@
     <div class="step" style="border-bottom:1px solid #eee;padding-bottom:14px;margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="background:#1a7a6d;color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">3</span><strong>Coût horaire (FCFA)</strong></div>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-            <input type="number" name="default_cost" id="defaultCost" min="0" step="100" value="0" style="width:140px" placeholder="Ex: 1500">
+            <input type="number" name="default_cost" id="defaultCost" min="0" step="1" value="0" style="width:140px" placeholder="Ex: 1500">
             <button type="button" class="btn btn-outline btn-sm" onclick="applyAll()">Appliquer à tous</button>
         </div>
         <div id="costInputs" style="display:none;background:#f8faf9;padding:10px;border-radius:8px;max-height:250px;overflow-y:auto"></div>
@@ -145,7 +145,7 @@ function buildCosts(employees) {
         html += '<div style="font-size:10px;font-weight:700;color:#1a7a6d;margin:6px 0 2px;border-bottom:1px solid #ddd;padding-bottom:2px">📁 ' + dept + '</div>';
         depts[dept].forEach(function(e) {
             html += '<div class="emp-cost-row"><span style="flex:1">' + e.name + '</span>' +
-                '<input type="number" class="ecost" data-name="' + e.name + '" min="0" step="100" value="0" style="width:90px;padding:3px 5px;border:1px solid #ddd;border-radius:4px;font-size:11px"> FCFA/h</div>';
+                '<input type="number" class="ecost" data-name="' + e.name + '" min="0" step="1" value="0" style="width:90px;padding:3px 5px;border:1px solid #ddd;border-radius:4px;font-size:11px"> FCFA/h</div>';
         });
     }
     box.innerHTML = html;

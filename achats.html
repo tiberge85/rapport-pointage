@@ -82,7 +82,7 @@
 <div class="form-row"><div class="form-group"><label>Fournisseur *</label><select name="fournisseur_id" required><option value="">—</option>{% for f in fournisseurs %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}</select></div>
 <div class="form-group"><label>Date</label><input type="date" name="date" value="{{ now }}"></div></div>
 <div class="form-group"><label>Articles / description</label><textarea name="items_description" rows="3" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px" placeholder="Liste des articles..."></textarea></div>
-<div class="form-row"><div class="form-group"><label>Total HT (FCFA)</label><input type="number" name="total_ht" step="1000" required></div>
+<div class="form-row"><div class="form-group"><label>Total HT (FCFA)</label><input type="number" name="total_ht" step="1" required></div>
 <div class="form-group"><label>Notes</label><input type="text" name="notes"></div></div>
 <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Enregistrer</button></div>
 </form></div></div>
@@ -109,7 +109,7 @@
 <div class="form-row"><div class="form-group"><label>Fournisseur *</label><select name="fournisseur_id" required><option value="">—</option>{% for f in fournisseurs %}<option value="{{ f.id }}">{{ f.name }}</option>{% endfor %}</select></div>
 <div class="form-group"><label>Date</label><input type="date" name="date" value="{{ now }}"></div></div>
 <div class="form-group"><label>Articles commandés</label><textarea name="items_description" rows="3" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
-<div class="form-row"><div class="form-group"><label>Total (FCFA)</label><input type="number" name="total" step="1000" required></div>
+<div class="form-row"><div class="form-group"><label>Total (FCFA)</label><input type="number" name="total" step="1" required></div>
 <div class="form-group"><label>Date livraison prévue</label><input type="date" name="delivery_date"></div></div>
 <div class="form-group"><label>Notes</label><input type="text" name="notes"></div>
 <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Créer</button></div>
@@ -135,7 +135,7 @@
 <div class="form-group"><label>Description</label><textarea name="description" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
 <div class="form-row"><div class="form-group"><label>Date début</label><input type="date" name="start_date"></div>
 <div class="form-group"><label>Date fin</label><input type="date" name="end_date"></div>
-<div class="form-group"><label>Montant (FCFA)</label><input type="number" name="amount" step="10000"></div></div>
+<div class="form-group"><label>Montant (FCFA)</label><input type="number" name="amount" step="1"></div></div>
 <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Ajouter</button></div>
 </form></div></div>
 

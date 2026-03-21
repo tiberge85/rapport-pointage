@@ -8,7 +8,7 @@
             <select name="client_id" required>{% for c in clients %}<option value="{{ c.id }}" {% if c.id == contract.client_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></div>
         <div class="form-row">
             <div class="form-group"><label>Référence</label><input type="text" name="reference" value="{{ contract.reference or '' }}"></div>
-            <div class="form-group"><label>Tarif mensuel (FCFA)</label><input type="number" name="monthly_rate" step="1000" value="{{ contract.monthly_rate or 0 }}"></div>
+            <div class="form-group"><label>Tarif mensuel (FCFA)</label><input type="number" name="monthly_rate" step="1" value="{{ contract.monthly_rate or 0 }}"></div>
         </div>
         <div class="form-row">
             <div class="form-group"><label>Début</label><input type="date" name="start_date" value="{{ contract.start_date or '' }}"></div>

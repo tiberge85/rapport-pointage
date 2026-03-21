@@ -10,7 +10,7 @@
             <label style="font-size:13px"><input type="radio" name="type_beneficiaire" value="particulier" {% if s.type_beneficiaire=='particulier' %}checked{% endif %}> Particulier</label>
             <label style="font-size:13px"><input type="radio" name="type_beneficiaire" value="autre" {% if s.type_beneficiaire=='autre' %}checked{% endif %}> Autre</label>
         </div></div>
-    <div class="form-group"><label>Montant (FCFA) *</label><input type="number" name="montant" value="{{ s.montant }}" step="100" required></div>
+    <div class="form-group"><label>Montant (FCFA) *</label><input type="number" name="montant" value="{{ s.montant }}" step="1" required></div>
     <div class="form-group"><label>Nature</label>
         <div style="display:flex;gap:16px;margin-top:4px">
             <label style="font-size:13px"><input type="radio" name="nature" value="espece" {% if s.nature=='espece' %}checked{% endif %}> Espèce</label>

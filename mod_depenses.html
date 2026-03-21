@@ -17,7 +17,7 @@
 </tr>{% endfor %}</tbody></table></div>{% else %}<p style="text-align:center;color:#999;padding:30px">Aucune dépense</p>{% endif %}
 </div></div>
 <div class="modal-bg" id="addM"><div class="modal"><h3>💸 Nouvelle dépense</h3><form method="post" action="/depenses/add">
-<div class="form-row"><div class="form-group"><label>Montant *</label><input type="number" name="amount" step="100" required></div><div class="form-group"><label>Date</label><input type="date" name="date"></div></div>
+<div class="form-row"><div class="form-group"><label>Montant *</label><input type="number" name="amount" step="1" required></div><div class="form-group"><label>Date</label><input type="date" name="date"></div></div>
 <div class="form-row"><div class="form-group"><label>Catégorie</label><input type="text" name="category" placeholder="Transport, Fournitures..."></div><div class="form-group"><label>Réf. reçu</label><input type="text" name="receipt_ref"></div></div>
 <div class="form-group"><label>Description</label><input type="text" name="description"></div>
 <div style="display:flex;gap:10px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">Enregistrer</button></div></form></div></div>

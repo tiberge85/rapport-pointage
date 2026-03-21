@@ -44,7 +44,7 @@
         <div class="form-group"><label>Compte destination *</label><select name="to_account_id" required>{% for a in accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></div>
     </div>
     <div class="form-row">
-        <div class="form-group"><label>Montant (FCFA) *</label><input type="number" name="amount" step="100" required min="1"></div>
+        <div class="form-group"><label>Montant (FCFA) *</label><input type="number" name="amount" step="1" required min="1"></div>
         <div class="form-group"><label>Date</label><input type="date" name="date"></div>
     </div>
     <div class="form-row">
@@ -75,7 +75,7 @@
     <input type="hidden" name="movement_type" value="recette">
     <div class="form-row">
         <div class="form-group"><label>Compte</label><select name="account_id"><option value="0">— Caisse principale —</option>{% for a in accounts %}<option value="{{ a.id }}">{{ a.name }}</option>{% endfor %}</select></div>
-        <div class="form-group"><label>Montant (FCFA) *</label><input type="number" name="amount" step="100" required min="1"></div>
+        <div class="form-group"><label>Montant (FCFA) *</label><input type="number" name="amount" step="1" required min="1"></div>
     </div>
     <div class="form-row">
         <div class="form-group"><label>Catégorie</label><select name="category"><option>Vente</option><option>Service</option><option>Encaissement facture</option><option>Remboursement</option><option>Autre</option></select></div>
@@ -96,7 +96,7 @@
     <input type="hidden" name="movement_type" value="depense">
     <div class="form-row">
         <div class="form-group"><label>Compte</label><select name="account_id"><option value="0">— Caisse principale —</option>{% for a in accounts %}<option value="{{ a.id }}">{{ a.name }} ({{ '{:,.0f}'.format(a.current_balance) }} F)</option>{% endfor %}</select></div>
-        <div class="form-group"><label>Montant (FCFA) *</label><input type="number" name="amount" step="100" required min="1"></div>
+        <div class="form-group"><label>Montant (FCFA) *</label><input type="number" name="amount" step="1" required min="1"></div>
     </div>
     <div class="form-row">
         <div class="form-group"><label>Catégorie</label><select name="category"><option>Achat fourniture</option><option>Salaire</option><option>Loyer</option><option>Transport</option><option>Frais divers</option><option>Autre</option></select></div>
@@ -119,13 +119,16 @@
 <thead><tr><th>Nom du compte</th><th>Type</th><th>Banque</th><th>N° compte</th><th style="text-align:right">Solde initial</th><th style="text-align:right">Solde actuel</th><th>Statut</th><th>Actions</th></tr></thead>
 <tbody>{% for a in accounts %}<tr>
 <td><strong>{{ a.name }}</strong></td>
-<td><span class="badge-status {% if a.type=='banque' %}sent{% else %}pending{% endif %}">{{ a.type }}</span></td>
+<td><span class="badge-status {% if a.type=='banque' %}sent{% elif a.type=='mobile_money' %}pending{% else %}{% endif %}">{{ a.type }}</span></td>
 <td>{{ a.bank_name or '-' }}</td>
 <td style="font-size:11px">{{ a.account_number or '-' }}</td>
 <td style="text-align:right">{{ '{:,.0f}'.format(a.initial_balance) }} F</td>
 <td style="text-align:right;font-weight:700;color:{% if a.current_balance >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(a.current_balance) }} F</td>
 <td>{% if a.status=='actif' %}<span style="color:#2e7d32">● Actif</span>{% else %}<span style="color:#c53030">● Inactif</span>{% endif %}</td>
-<td><a href="/tresorerie/account/delete/{{ a.id }}" class="btn btn-sm" style="color:#c53030" onclick="return confirm('Supprimer ce compte ?')">🗑️</a></td>
+<td style="white-space:nowrap">
+    <a href="#" class="btn btn-sm" style="color:#1565c0" onclick="editAccount({{ a.id }},'{{ a.name|replace("'","") }}','{{ a.type }}','{{ a.bank_name or "" }}','{{ a.account_number or "" }}',{{ a.initial_balance }},'{{ a.notes or "" }}','{{ a.status }}');return false">✏️</a>
+    <a href="/tresorerie/account/delete/{{ a.id }}" class="btn btn-sm" style="color:#c53030" onclick="return confirm('Supprimer ce compte ?')">🗑️</a>
+</td>
 </tr>{% endfor %}</tbody></table></div>
 <div style="margin-top:12px;padding:12px;background:#e8f5e9;border-radius:8px;text-align:center">
     <strong>Total soldes initiaux : {{ '{:,.0f}'.format(total_initial) }} FCFA</strong>
@@ -139,8 +142,34 @@
 <div class="form-row"><div class="form-group"><label>Type</label><select name="type"><option value="caisse">Caisse</option><option value="banque">Banque</option><option value="mobile_money">Mobile Money</option></select></div>
 <div class="form-group"><label>Nom de la banque</label><input type="text" name="bank_name" placeholder="SGBCI, BICICI..."></div></div>
 <div class="form-row"><div class="form-group"><label>N° de compte</label><input type="text" name="account_number" placeholder="CI..."></div>
-<div class="form-group"><label>Solde initial (FCFA) *</label><input type="number" name="initial_balance" step="1000" value="0" required></div></div>
+<div class="form-group"><label>Solde initial (FCFA) *</label><input type="number" name="initial_balance" step="1" min="0" value="0" required></div></div>
 <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
 <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">💰 Créer le compte</button></div></form></div></div>
+
+<!-- Modal: Modifier un compte -->
+<div class="modal-bg" id="editAccM"><div class="modal"><h3 id="eaTitle">✏️ Modifier le compte</h3><form method="post" id="editAccForm">
+<div class="form-group"><label>Nom du compte *</label><input type="text" name="name" id="ea_name" required></div>
+<div class="form-row"><div class="form-group"><label>Type</label><select name="type" id="ea_type"><option value="caisse">Caisse</option><option value="banque">Banque</option><option value="mobile_money">Mobile Money</option></select></div>
+<div class="form-group"><label>Nom de la banque</label><input type="text" name="bank_name" id="ea_bank"></div></div>
+<div class="form-row"><div class="form-group"><label>N° de compte</label><input type="text" name="account_number" id="ea_number"></div>
+<div class="form-group"><label>Solde initial (FCFA)</label><input type="number" name="initial_balance" id="ea_balance" step="1" min="0"></div></div>
+<div class="form-row"><div class="form-group"><label>Statut</label><select name="status" id="ea_status"><option value="actif">Actif</option><option value="inactif">Inactif</option></select></div>
+<div class="form-group"><label>Notes</label><input type="text" name="notes" id="ea_notes"></div></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">💾 Sauvegarder</button></div></form></div></div>
+
+<script>
+function editAccount(id, name, type, bank, number, balance, notes, status) {
+    document.getElementById('editAccForm').action = '/tresorerie/account/edit/' + id;
+    document.getElementById('eaTitle').textContent = '✏️ Modifier — ' + name;
+    document.getElementById('ea_name').value = name;
+    document.getElementById('ea_type').value = type;
+    document.getElementById('ea_bank').value = bank;
+    document.getElementById('ea_number').value = number;
+    document.getElementById('ea_balance').value = balance;
+    document.getElementById('ea_notes').value = notes;
+    document.getElementById('ea_status').value = status;
+    document.getElementById('editAccM').classList.add('active');
+}
+</script>
 {% endif %}
 {% endblock %}

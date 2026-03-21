@@ -101,12 +101,48 @@ def prospects():
 @modules_bp.route('/prospects/add', methods=['POST'])
 @perm_required('clients')
 def prospects_add():
-    db_insert('prospects', company=request.form.get('company', request.form.get('contact_name','')), contact_name=request.form.get('contact_name',''),
+    db_insert('prospects', company=request.form.get('company', request.form.get('contact_name','')),
+        contact_name=request.form.get('contact_name',''),
         tel=request.form.get('tel',''), email=request.form.get('email',''), source=request.form.get('source',''),
         estimated_value=float(request.form.get('estimated_value',0) or 0),
-        notes=request.form.get('notes',''), assigned_to=int(request.form.get('assigned_to',0) or 0) or None,
+        notes=request.form.get('notes',''), description=request.form.get('description',''),
+        position=request.form.get('position',''), city=request.form.get('city',''),
+        region=request.form.get('region',''), assigned_to=request.form.get('assigned_to',''),
         created_by=session['user_id'])
     flash("Prospect ajouté", "success"); return redirect(url_for('modules.prospects'))
+
+@modules_bp.route('/prospects/edit/<int:pid>', methods=['POST'])
+@perm_required('clients')
+def prospects_edit(pid):
+    db_update('prospects', pid, contact_name=request.form.get('contact_name',''),
+        company=request.form.get('company',''), tel=request.form.get('tel',''),
+        email=request.form.get('email',''), source=request.form.get('source',''),
+        status=request.form.get('status','nouveau'),
+        estimated_value=float(request.form.get('estimated_value',0) or 0),
+        position=request.form.get('position',''), city=request.form.get('city',''),
+        region=request.form.get('region',''), assigned_to=request.form.get('assigned_to',''),
+        description=request.form.get('description',''))
+    flash("Prospect modifié", "success"); return redirect(url_for('modules.prospects'))
+
+@modules_bp.route('/prospects/delete/<int:pid>')
+@perm_required('clients')
+def prospects_delete(pid):
+    conn = get_db(); conn.execute("DELETE FROM prospects WHERE id=?", (pid,)); conn.commit(); conn.close()
+    flash("Prospect supprimé", "success"); return redirect(url_for('modules.prospects'))
+
+@modules_bp.route('/prospects/convert/<int:pid>')
+@perm_required('clients')
+def prospects_convert(pid):
+    p = db_get_by_id('prospects', pid)
+    if p:
+        db_insert('clients', name=p.get('company') or p.get('contact_name',''),
+            tel=p.get('tel',''), email=p.get('email',''),
+            contact_name=p.get('contact_name',''), address=p.get('address',''),
+            city=p.get('city',''), source='prospect',
+            notes=f"Converti depuis prospect #{pid}")
+        db_update('prospects', pid, status='gagne')
+        flash("Prospect converti en client !", "success")
+    return redirect(url_for('modules.prospects'))
 
 @modules_bp.route('/prospects/<int:pid>/status/<status>')
 @perm_required('clients')
@@ -275,6 +311,26 @@ def tresorerie_account_add():
 def tresorerie_account_delete(aid):
     conn = get_db(); conn.execute("DELETE FROM bank_accounts WHERE id=?", (aid,)); conn.commit(); conn.close()
     flash("Compte supprimé", "success")
+    return redirect(url_for('modules.tresorerie', tab='solde_initial'))
+
+@modules_bp.route('/tresorerie/account/edit/<int:aid>', methods=['POST'])
+@perm_required('comptabilite')
+def tresorerie_account_edit(aid):
+    new_initial = float(request.form.get('initial_balance', 0) or 0)
+    conn = get_db()
+    old = conn.execute("SELECT initial_balance, current_balance FROM bank_accounts WHERE id=?", (aid,)).fetchone()
+    if old:
+        diff = new_initial - old['initial_balance']
+        new_current = old['current_balance'] + diff
+        conn.execute("""UPDATE bank_accounts SET name=?, type=?, bank_name=?, account_number=?,
+            initial_balance=?, current_balance=?, notes=?, status=? WHERE id=?""",
+            (request.form.get('name',''), request.form.get('type','caisse'),
+             request.form.get('bank_name',''), request.form.get('account_number',''),
+             new_initial, new_current, request.form.get('notes',''),
+             request.form.get('status','actif'), aid))
+        conn.commit()
+    conn.close()
+    flash("Compte modifié", "success")
     return redirect(url_for('modules.tresorerie', tab='solde_initial'))
 
 @modules_bp.route('/tresorerie/transfer/add', methods=['POST'])

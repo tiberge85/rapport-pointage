@@ -113,11 +113,11 @@
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
                     <div class="form-group">
                         <label style="font-size:12px;font-weight:600">Jours ouvrables (Lun-Ven)</label>
-                        <input type="number" name="required_hours" min="0" max="24" step="0.5" value="0" style="width:120px">
+                        <input type="number" name="required_hours" min="0" step="0.5" value="0" style="width:120px">
                     </div>
                     <div class="form-group">
                         <label style="font-size:12px;font-weight:600">Week-end (Sam-Dim)</label>
-                        <input type="number" name="required_hours_weekend" min="0" max="24" step="0.5" value="0" style="width:120px">
+                        <input type="number" name="required_hours_weekend" min="0" step="0.5" value="0" style="width:120px">
                     </div>
                 </div>
                 <div class="hint">Ex: 8h en semaine, 4h le week-end. Mettez 0 pour utiliser l'emploi du temps du fichier.</div>
@@ -132,7 +132,7 @@
                 <div class="form-group">
                     <label style="font-size:12px;font-weight:600">Coût par défaut pour tous</label>
                     <div style="display:flex;gap:8px;align-items:center">
-                        <input type="number" name="hourly_cost" id="defaultCost" min="0" step="100" value="0" style="width:160px" placeholder="Ex: 1500">
+                        <input type="number" name="hourly_cost" id="defaultCost" min="0" step="1" value="0" style="width:160px" placeholder="Ex: 1500">
                         <button type="button" class="btn btn-outline btn-sm" onclick="applyDefaultCost()">Appliquer à tous</button>
                     </div>
                 </div>
@@ -301,7 +301,7 @@ function buildCostInputs(employees) {
     employees.forEach(function(e, i) {
         html += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">' +
             '<span style="flex:1;font-size:11px;font-weight:600">' + e.name + '</span>' +
-            '<input type="number" id="cost_' + i + '" data-name="' + e.name + '" class="emp-cost-input" min="0" step="100" value="0" style="width:100px;padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:11px" placeholder="FCFA/h">' +
+            '<input type="number" id="cost_' + i + '" data-name="' + e.name + '" class="emp-cost-input" min="0" step="1" value="0" style="width:100px;padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:11px" placeholder="FCFA/h">' +
             '</div>';
     });
     box.innerHTML = '<div style="font-size:11px;font-weight:700;color:#1a3a5c;margin-bottom:6px">💰 Coût par employé :</div>' + html;

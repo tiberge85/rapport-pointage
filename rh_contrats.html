@@ -14,7 +14,7 @@
 <div class="form-row"><div class="form-group"><label>Code contrat</label><input type="text" name="code" placeholder="CTR-001"></div>
 <div class="form-group"><label>Personnel *</label><select name="employee_id" required>{% for e in employees %}<option value="{{ e.id }}">{{ e.first_name }} {{ e.last_name }}</option>{% endfor %}</select></div></div>
 <div class="form-row"><div class="form-group"><label>Type</label><select name="contract_type"><option>CDI</option><option>CDD</option><option>Stage</option><option>Freelance</option></select></div>
-<div class="form-group"><label>Salaire (F)</label><input type="number" name="salary" step="1000" value="0"></div></div>
+<div class="form-group"><label>Salaire (F)</label><input type="number" name="salary" step="1" value="0"></div></div>
 <div class="form-row"><div class="form-group"><label>Début validité</label><input type="date" name="start_date"></div>
 <div class="form-group"><label>Fin validité</label><input type="date" name="end_date"></div></div>
 <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
