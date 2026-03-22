@@ -95,6 +95,8 @@ from models import migrate_v10
 migrate_v10()
 from models import migrate_v11
 migrate_v11()
+from models import migrate_v12
+migrate_v12()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -142,7 +144,7 @@ def permission_required(perm):
 @app.context_processor
 def inject_globals():
     """Injecte les variables globales dans tous les templates."""
-    ctx = {'current_user': None, 'permissions': [], 'pending_count': 0, 'unread_messages': 0, 'caisse_pending': 0}
+    ctx = {'current_user': None, 'permissions': [], 'pending_count': 0, 'unread_messages': 0, 'caisse_pending': 0, 'weekly_champion': None}
     if 'user_id' in session:
         user = get_user_by_id(session['user_id'])
         if user:
@@ -160,6 +162,18 @@ def inject_globals():
                     ctx['caisse_pending'] = _c.execute("SELECT COUNT(*) FROM caisse_sorties WHERE status='en_attente'").fetchone()[0]
                     _c.close()
                 except: pass
+            # Weekly champion
+            try:
+                from models import get_current_champion, update_weekly_champion, get_live_champion
+                update_weekly_champion()
+                champ = get_current_champion()
+                live = get_live_champion()
+                # Prefer stored champion, fall back to live leader
+                if champ:
+                    ctx['weekly_champion'] = champ
+                elif live:
+                    ctx['weekly_champion'] = live
+            except: pass
     else:
         ctx['can_edit'] = lambda module: False
     return ctx
@@ -3411,17 +3425,17 @@ def rapports_assiduite():
         p_end = today.strftime('%Y-%m-%d')
         p_label = f"Mois de {today.strftime('%B %Y')}"
         expected_days = sum(1 for d in range((today - today.replace(day=1)).days + 1)
-                          if (today.replace(day=1) + timedelta(days=d)).weekday() < 5)
+                          if (today.replace(day=1) + timedelta(days=d)).weekday() < 6)
     elif period == 'semaine_prec':
         p_start = prev_week_start.strftime('%Y-%m-%d')
         p_end = prev_week_end.strftime('%Y-%m-%d')
         p_label = f"Semaine du {prev_week_start.strftime('%d/%m')} au {prev_week_end.strftime('%d/%m/%Y')}"
-        expected_days = 5
+        expected_days = 6
     else:
         p_start = week_start.strftime('%Y-%m-%d')
         p_end = week_end.strftime('%Y-%m-%d')
         p_label = f"Semaine du {week_start.strftime('%d/%m')} au {week_end.strftime('%d/%m/%Y')}"
-        expected_days = min(5, (today - week_start).days + 1)  # Only count past days
+        expected_days = min(6, (today - week_start).days + 1)  # Only count past days
     
     # Get all reports in period grouped by user
     rows = conn.execute("""
@@ -3478,11 +3492,142 @@ def rapports_assiduite():
     # Best employee
     best = ranking[0] if ranking and ranking[0]['nb_rapports'] > 0 else None
     
+    # All stored champions for attestation download
+    champions_list = [dict(r) for r in conn.execute("SELECT * FROM weekly_champion ORDER BY week_end DESC LIMIT 10").fetchall()]
+    
     conn.close()
     return render_template('rapports_assiduite.html', page='rapports_j',
         ranking=ranking, period=period, p_label=p_label, expected_days=expected_days,
         total_reports=total_reports, total_users=total_users, assidus=assidus,
-        best=best, user=u, today=today.strftime('%Y-%m-%d'))
+        best=best, user=u, today=today.strftime('%Y-%m-%d'), champions_list=champions_list)
+
+@app.route('/rapports-journaliers/attestation/<int:champ_id>')
+@permission_required('rapports_j')
+def rapports_attestation(champ_id):
+    """Génère l'attestation d'encouragement PDF."""
+    from models import get_db as _gdb2
+    conn = _gdb2()
+    champ = conn.execute("SELECT * FROM weekly_champion WHERE id=?", (champ_id,)).fetchone()
+    conn.close()
+    if not champ:
+        flash("Champion non trouvé", "error")
+        return redirect('/rapports-journaliers/assiduite')
+    champ = dict(champ)
+    
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.units import mm, cm
+    from reportlab.lib.colors import HexColor, white, black
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable, Frame, PageTemplate
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+    from reportlab.graphics.shapes import Drawing, Rect, Line, String
+    from reportlab.graphics import renderPDF
+    
+    output = os.path.join(app.config['UPLOAD_FOLDER'], f'attestation_{champ_id}.pdf')
+    os.makedirs(os.path.dirname(output), exist_ok=True)
+    
+    pw, ph = landscape(A4)
+    doc = SimpleDocTemplate(output, pagesize=landscape(A4),
+        leftMargin=30*mm, rightMargin=30*mm, topMargin=15*mm, bottomMargin=15*mm)
+    
+    GOLD = HexColor('#B8860B')
+    GOLD_LIGHT = HexColor('#DAA520')
+    NAVY = HexColor('#1a1a2e')
+    GREY = HexColor('#555555')
+    LGREY = HexColor('#999999')
+    
+    usable_w = pw - 60*mm
+    
+    story = []
+    
+    # ===== TOP LINE =====
+    top_line = Table([['']], colWidths=[usable_w], rowHeights=[1*mm])
+    top_line.setStyle(TableStyle([('LINEABOVE', (0,0), (-1,0), 3, GOLD)]))
+    story.append(top_line)
+    story.append(Spacer(1, 8*mm))
+    
+    # ===== COMPANY =====
+    story.append(Paragraph("RAMYA TECHNOLOGIE &amp; INNOVATION",
+        ParagraphStyle('company', fontName='Helvetica', fontSize=9, textColor=LGREY, 
+                       alignment=TA_CENTER, spaceAfter=8*mm)))
+    
+    # ===== TITLE =====
+    story.append(Paragraph("ATTESTATION D'ENCOURAGEMENT",
+        ParagraphStyle('title', fontName='Helvetica-Bold', fontSize=24, textColor=NAVY, 
+                       alignment=TA_CENTER, spaceAfter=12*mm)))
+    
+    # ===== LINE =====
+    story.append(HRFlowable(width="35%", thickness=2, color=GOLD, spaceAfter=12*mm))
+    
+    # ===== SUBTITLE =====
+    story.append(Paragraph("Employ\u00e9 le plus assidu de la semaine",
+        ParagraphStyle('subtitle', fontName='Helvetica-Bold', fontSize=12, textColor=GOLD, 
+                       alignment=TA_CENTER, spaceAfter=10*mm)))
+    
+    # ===== INTRO =====
+    story.append(Paragraph("Nous avons l'honneur de d\u00e9cerner cette attestation \u00e0 :",
+        ParagraphStyle('intro', fontName='Helvetica', fontSize=10, textColor=GREY, 
+                       alignment=TA_CENTER, spaceAfter=8*mm)))
+    
+    # ===== NAME =====
+    story.append(Paragraph(f"<b>{champ['full_name']}</b>",
+        ParagraphStyle('fullname', fontName='Helvetica-Bold', fontSize=28, textColor=NAVY, 
+                       alignment=TA_CENTER, spaceAfter=10*mm)))
+    
+    # ===== ROLE =====
+    role_dept = champ['role']
+    if champ.get('department'):
+        role_dept += f" - {champ['department']}"
+    story.append(Paragraph(role_dept,
+        ParagraphStyle('roledept', fontName='Helvetica', fontSize=10, textColor=LGREY, 
+                       alignment=TA_CENTER, spaceAfter=12*mm)))
+    
+    # ===== LINE =====
+    story.append(HRFlowable(width="35%", thickness=1, color=GOLD_LIGHT, spaceAfter=8*mm))
+    
+    # ===== REASON =====
+    story.append(Paragraph("Pour son assiduit\u00e9 exemplaire dans le d\u00e9p\u00f4t des rapports journaliers",
+        ParagraphStyle('reason', fontName='Helvetica', fontSize=11, textColor=HexColor('#333333'), 
+                       alignment=TA_CENTER, spaceAfter=4*mm)))
+    
+    story.append(Paragraph(f"Semaine du <b>{champ['week_start']}</b> au <b>{champ['week_end']}</b>",
+        ParagraphStyle('period', fontName='Helvetica', fontSize=10, textColor=GREY, 
+                       alignment=TA_CENTER, spaceAfter=8*mm)))
+    
+    # ===== STATS =====
+    s_label = ParagraphStyle('sl', fontName='Helvetica', fontSize=8, textColor=LGREY, alignment=TA_CENTER)
+    stats_data = [[
+        Paragraph(f"<b>{champ['nb_rapports']}</b>", ParagraphStyle('sn', fontName='Helvetica-Bold', fontSize=20, textColor=GOLD, alignment=TA_CENTER)),
+        Paragraph(f"<b>{int(champ['avg_completion'])}%</b>", ParagraphStyle('sc', fontName='Helvetica-Bold', fontSize=20, textColor=HexColor('#2e7d32'), alignment=TA_CENTER)),
+        Paragraph("<b>ASSIDU</b>", ParagraphStyle('sb', fontName='Helvetica-Bold', fontSize=14, textColor=GOLD, alignment=TA_CENTER)),
+    ], [
+        Paragraph("rapports d\u00e9pos\u00e9s", s_label),
+        Paragraph("r\u00e9alisation moyenne", s_label),
+        Paragraph("badge d'assiduit\u00e9", s_label),
+    ]]
+    cw = usable_w / 3
+    st = Table(stats_data, colWidths=[cw, cw, cw], rowHeights=[12*mm, 5*mm])
+    st.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('LINEABOVE', (0,0), (-1,0), 0.5, HexColor('#eeeeee')),
+        ('LINEBELOW', (0,-1), (-1,-1), 0.5, HexColor('#eeeeee')),
+        ('INNERGRID', (0,0), (-1,-1), 0.3, HexColor('#eeeeee')),
+    ]))
+    story.append(st)
+    story.append(Spacer(1, 5*mm))
+    
+    # ===== FOOTER =====
+    now_str = datetime.now().strftime("%d/%m/%Y")
+    story.append(Paragraph(f"Fait le {now_str} - RAMYA TECHNOLOGIE &amp; INNOVATION",
+        ParagraphStyle('date', fontName='Helvetica', fontSize=8, textColor=LGREY, alignment=TA_CENTER, spaceAfter=3*mm)))
+    
+    # ===== BOTTOM LINE =====
+    bot_line = Table([['']], colWidths=[usable_w], rowHeights=[1*mm])
+    bot_line.setStyle(TableStyle([('LINEBELOW', (0,0), (-1,0), 3, GOLD)]))
+    story.append(bot_line)
+    
+    doc.build(story)
+    return send_file(output, as_attachment=True, download_name=f"Attestation_{champ['full_name'].replace(' ','_')}.pdf")
 
 
 # ======================== PIÈCES DE CAISSE / DÉPENSES ========================

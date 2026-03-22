@@ -16,9 +16,9 @@
 <div style="display:flex;gap:10px;margin-bottom:14px">
     <div style="flex:1;background:linear-gradient(135deg,#e8f5e9,#f1f8e9);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px">
         <div style="font-size:30px">📊</div>
-        <div><div style="font-size:11px;color:#888">Mes rapports cette semaine</div><div style="font-size:22px;font-weight:800;color:#2e7d32">{{ my_week }} <span style="font-size:12px;color:#888;font-weight:400">/ 5 jours</span></div></div>
-        <div style="margin-left:auto;width:50px;height:50px;border-radius:50%;border:4px solid {% if my_week >= 5 %}#B8860B{% elif my_week >= 3 %}#2e7d32{% else %}#e8672a{% endif %};display:flex;align-items:center;justify-content:center">
-            <span style="font-size:14px;font-weight:800;color:{% if my_week >= 5 %}#B8860B{% elif my_week >= 3 %}#2e7d32{% else %}#e8672a{% endif %}">{{ ((my_week/5)*100)|int }}%</span>
+        <div><div style="font-size:11px;color:#888">Mes rapports cette semaine</div><div style="font-size:22px;font-weight:800;color:#2e7d32">{{ my_week }} <span style="font-size:12px;color:#888;font-weight:400">/ 6 jours</span></div></div>
+        <div style="margin-left:auto;width:50px;height:50px;border-radius:50%;border:4px solid {% if my_week >= 6 %}#B8860B{% elif my_week >= 3 %}#2e7d32{% else %}#e8672a{% endif %};display:flex;align-items:center;justify-content:center">
+            <span style="font-size:14px;font-weight:800;color:{% if my_week >= 6 %}#B8860B{% elif my_week >= 3 %}#2e7d32{% else %}#e8672a{% endif %}">{{ ((my_week/6)*100)|int }}%</span>
         </div>
     </div>
     <div style="flex:0.5;background:#f8faf9;border-radius:10px;padding:14px;text-align:center">

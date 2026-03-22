@@ -1976,3 +1976,91 @@ def migrate_v11():
         );
     ''')
     conn.commit(); conn.close()
+
+def migrate_v12():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS weekly_champion (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, full_name TEXT, role TEXT, department TEXT,
+            week_start TEXT, week_end TEXT,
+            nb_rapports INTEGER, avg_completion REAL,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    conn.commit(); conn.close()
+
+def get_current_champion():
+    """Retourne le champion en cours (le plus récent)."""
+    conn = get_db()
+    row = conn.execute("SELECT * FROM weekly_champion ORDER BY week_end DESC, nb_rapports DESC LIMIT 1").fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def update_weekly_champion():
+    """Calcule et enregistre le champion de la semaine écoulée."""
+    from datetime import datetime, timedelta
+    conn = get_db()
+    today = datetime.now().date()
+    # Previous completed week (Mon-Sun)
+    last_sunday = today - timedelta(days=today.weekday() + 1)
+    last_monday = last_sunday - timedelta(days=6)
+    ws = last_monday.strftime('%Y-%m-%d')
+    we = last_sunday.strftime('%Y-%m-%d')
+    
+    # Check if already computed for this week
+    existing = conn.execute("SELECT id FROM weekly_champion WHERE week_start=?", (ws,)).fetchone()
+    if existing:
+        conn.close(); return
+    
+    # Find top performer
+    row = conn.execute("""
+        SELECT rj.user_id, u.full_name, u.role, COUNT(DISTINCT rj.date) as nb,
+               AVG(rj.completion_pct) as avg_c, rj.department
+        FROM rapports_journaliers rj
+        LEFT JOIN users u ON rj.user_id=u.id
+        WHERE rj.date >= ? AND rj.date <= ?
+        GROUP BY rj.user_id
+        ORDER BY nb DESC, avg_c DESC
+        LIMIT 1
+    """, (ws, we)).fetchone()
+    
+    if row and row['nb'] > 0:
+        conn.execute("""INSERT INTO weekly_champion 
+            (user_id, full_name, role, department, week_start, week_end, nb_rapports, avg_completion)
+            VALUES (?,?,?,?,?,?,?,?)""",
+            (row['user_id'], row['full_name'], row['role'], row['department'] or '',
+             ws, we, row['nb'], round(row['avg_c'] or 0)))
+        conn.commit()
+    conn.close()
+
+def get_live_champion():
+    """Retourne le leader actuel de la semaine en cours (mis à jour en temps réel)."""
+    from datetime import datetime, timedelta
+    conn = get_db()
+    today = datetime.now().date()
+    week_start = today - timedelta(days=today.weekday())
+    ws = week_start.strftime('%Y-%m-%d')
+    we = today.strftime('%Y-%m-%d')
+    
+    row = conn.execute("""
+        SELECT rj.user_id, u.full_name, u.role, COUNT(DISTINCT rj.date) as nb,
+               AVG(rj.completion_pct) as avg_c, rj.department
+        FROM rapports_journaliers rj
+        LEFT JOIN users u ON rj.user_id=u.id
+        WHERE rj.date >= ? AND rj.date <= ?
+        GROUP BY rj.user_id
+        ORDER BY nb DESC, avg_c DESC
+        LIMIT 1
+    """, (ws, we)).fetchone()
+    conn.close()
+    
+    if row and row['nb'] > 0:
+        return {
+            'user_id': row['user_id'], 'full_name': row['full_name'],
+            'role': row['role'], 'department': row['department'] or '',
+            'week_start': ws, 'week_end': we,
+            'nb_rapports': row['nb'], 'avg_completion': round(row['avg_c'] or 0),
+            'is_live': True
+        }
+    return None
