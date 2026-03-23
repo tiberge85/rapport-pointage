@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% block title %}WannyGest - Nouvelle facture{% endblock %}{% block content %}
+<div class="page-header"><h1>💰 Nouvelle facture</h1><a href="/comptabilite" class="btn btn-outline btn-sm">← Retour</a></div>
+<div class="card" style="max-width:700px"><div class="card-body"><form method="post">
+    <div class="form-row"><div class="form-group"><label>Client *</label><select name="client_id" onchange="var o=this.options[this.selectedIndex];document.getElementById('cn').value=o.text||''"><option value="">—</option>{% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Nom client</label><input type="text" name="client_name" id="cn" required></div></div>
+    <div class="form-group"><label>Objet *</label><input type="text" name="objet" required placeholder="Installation vidéosurveillance..."></div>
+    <div class="form-row"><div class="form-group"><label>Montant HT (FCFA)</label><input type="number" name="total_ht" id="ht" step="1" min="0" oninput="calcTTC()"></div>
+    <div class="form-group"><label>TVA (18%)</label><input type="number" name="tva" id="tva" step="1" readonly></div>
+    <div class="form-group"><label>Montant TTC</label><input type="number" name="amount" id="ttc" step="1" min="0"><input type="hidden" name="total_ttc" id="ttc2"></div></div>
+    <div class="form-row"><div class="form-group"><label>Échéance</label><input type="date" name="due_date"></div>
+    <div class="form-group"><label>Moyen de paiement</label><select name="payment_method"><option>Virement</option><option>Espèces</option><option>Chèque</option><option>Mobile Money</option></select></div></div>
+    <div class="form-group"><label>Description / Notes</label><textarea name="description" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
+    <div style="display:flex;gap:10px;margin-top:14px"><a href="/comptabilite" class="btn btn-outline">Annuler</a><button type="submit" class="btn btn-primary">💰 Créer la facture</button></div>
+</form></div></div>
+<script>
+function calcTTC(){var ht=parseFloat(document.getElementById('ht').value)||0;var tva=Math.round(ht*0.18);document.getElementById('tva').value=tva;document.getElementById('ttc').value=ht+tva;document.getElementById('ttc2').value=ht+tva}
+</script>
+{% endblock %}

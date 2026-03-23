@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% block title %}WannyGest - Rapports de caisse{% endblock %}{% block content %}
+<div class="page-header"><h1>📋 Rapports de caisse hebdomadaires</h1>
+<div style="display:flex;gap:6px">
+<a href="/comptabilite/rapport-caisse/new" class="btn btn-orange btn-sm">+ Nouveau rapport</a>
+<button class="btn btn-sm btn-outline" onclick="document.getElementById('importM').classList.add('active')">📥 Importer Excel</button>
+<a href="/comptabilite" class="btn btn-outline btn-sm">← Comptabilité</a>
+</div></div>
+
+{% if reports %}
+<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Agent</th><th>N° Rapport</th><th>Semaine</th><th style="text-align:right">Crédité</th><th style="text-align:right">Débité</th><th style="text-align:right">Reste</th><th>Actions</th></tr></thead>
+<tbody>{% for r in reports %}<tr>
+<td>{{ r.id }}</td><td><strong>{{ r.agent_name }}</strong></td><td>{{ r.report_number or '-' }}</td>
+<td style="font-size:11px">{{ r.week_start or '-' }}</td>
+<td style="text-align:right;color:#2e7d32;font-weight:600">{{ '{:,.0f}'.format(r.total_credit) }}</td>
+<td style="text-align:right;color:#c53030;font-weight:600">{{ '{:,.0f}'.format(r.total_debit) }}</td>
+<td style="text-align:right;font-weight:700;color:{% if r.reste_caisse >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(r.reste_caisse) }}</td>
+<td style="white-space:nowrap">
+    <a href="/comptabilite/rapport-caisse/view/{{ r.id }}" class="btn btn-sm btn-outline" title="Voir">👁️</a>
+    <a href="/comptabilite/rapport-caisse/pdf/{{ r.id }}" class="btn btn-sm btn-outline" title="PDF">📄</a>
+    <a href="/comptabilite/rapport-caisse/excel/{{ r.id }}" class="btn btn-sm btn-outline" title="Excel">📊</a>
+</td></tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}<div class="card"><div class="card-body" style="text-align:center;padding:40px;color:#999">Aucun rapport. Créez-en un ou importez un fichier Excel.</div></div>{% endif %}
+
+<div class="modal-bg" id="importM"><div class="modal"><h3>📥 Importer un rapport de caisse</h3>
+<form method="post" action="/comptabilite/rapport-caisse/import" enctype="multipart/form-data">
+<div class="form-group"><label>Fichier Excel (.xlsx)</label><input type="file" name="file" accept=".xlsx,.xls" required></div>
+<div class="hint">Format attendu : Ligne 2=Agent, Ligne 4=N° Rapport, Ligne 6=En-têtes (N°, DATE, DESCRIPTION, CREDITE, N° P.C, DEBITE)</div>
+<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">📥 Importer</button></div>
+</form></div></div>
+{% endblock %}

@@ -97,6 +97,8 @@ from models import migrate_v11
 migrate_v11()
 from models import migrate_v12
 migrate_v12()
+from models import migrate_v13
+migrate_v13()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -110,7 +112,7 @@ ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general',
                    'envoyer', 'logs', 
                    'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit',
-                   'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j']
+                   'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis']
 
 def allowed_file(fn):
     return '.' in fn and fn.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -1602,6 +1604,280 @@ def comptabilite_status(inv_id, status):
                     'Facture', f"Facture #{inv_id} → {status}", request.remote_addr)
         flash(f"Statut mis à jour : {status}", "success")
     return redirect(url_for('comptabilite_page'))
+
+@app.route('/comptabilite/facture/new', methods=['GET', 'POST'])
+@permission_required('comptabilite_edit')
+def invoice_new():
+    if request.method == 'POST':
+        ref = f"FAC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        conn = _gdb()
+        conn.execute("""INSERT INTO invoices (reference, client_name, client_id, amount, objet, 
+            description, due_date, payment_method, status, total_ht, tva, total_ttc, notes)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (ref, request.form.get('client_name',''), int(request.form.get('client_id',0) or 0) or None,
+             float(request.form.get('amount',0) or 0), request.form.get('objet',''),
+             request.form.get('description',''), request.form.get('due_date',''),
+             request.form.get('payment_method',''), 'a_envoyer',
+             float(request.form.get('total_ht',0) or 0), float(request.form.get('tva',0) or 0),
+             float(request.form.get('total_ttc',0) or 0), request.form.get('notes','')))
+        conn.commit(); conn.close()
+        flash(f"Facture {ref} créée", "success")
+        return redirect(url_for('comptabilite_page'))
+    clients = get_all_clients()
+    return render_template('invoice_new.html', page='comptabilite', clients=clients)
+
+@app.route('/devis/convert/<int:did>')
+@permission_required('convertir_devis')
+def devis_to_invoice(did):
+    from models import db_get_by_id
+    d = db_get_by_id('devis', did)
+    if not d:
+        flash("Devis non trouvé", "error"); return redirect('/devis')
+    ref = f"FAC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    conn = _gdb()
+    conn.execute("""INSERT INTO invoices (reference, client_name, client_id, amount, objet,
+        total_ht, tva, total_ttc, items_json, devis_id, status, notes)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (ref, d.get('client_name',''), d.get('client_id'), d.get('total_ttc',0),
+         d.get('objet',''), d.get('total_ht',0), d.get('total_ht',0)*0.18 if d.get('total_ht') else 0,
+         d.get('total_ttc',0), d.get('items_json',''), did, 'a_envoyer',
+         f"Convertie depuis devis {d.get('reference','')}"))
+    conn.commit(); conn.close()
+    user = get_user_by_id(session['user_id'])
+    log_activity(session['user_id'], user['full_name'] if user else '?',
+                'Facture', f"Devis {d.get('reference','')} converti en facture {ref}", request.remote_addr)
+    flash(f"Devis {d.get('reference','')} converti en facture {ref}", "success")
+    return redirect(url_for('comptabilite_page'))
+
+# ======================== RAPPORT DE CAISSE HEBDOMADAIRE ========================
+
+@app.route('/comptabilite/rapport-caisse')
+@permission_required('comptabilite')
+def rapport_caisse():
+    conn = _gdb()
+    reports = [dict(r) for r in conn.execute(
+        "SELECT * FROM weekly_cash_reports ORDER BY created_at DESC LIMIT 50").fetchall()]
+    conn.close()
+    return render_template('rapport_caisse.html', page='comptabilite', reports=reports)
+
+@app.route('/comptabilite/rapport-caisse/new', methods=['GET', 'POST'])
+@permission_required('comptabilite_edit')
+def rapport_caisse_new():
+    if request.method == 'POST':
+        items = []
+        i = 1
+        while request.form.get(f'date_{i}'):
+            items.append({
+                'n': i, 'date': request.form.get(f'date_{i}',''),
+                'description': request.form.get(f'desc_{i}',''),
+                'credit': float(request.form.get(f'credit_{i}',0) or 0),
+                'pc': request.form.get(f'pc_{i}',''),
+                'debit': float(request.form.get(f'debit_{i}',0) or 0),
+            })
+            i += 1
+        total_c = sum(it['credit'] for it in items)
+        total_d = sum(it['debit'] for it in items)
+        
+        conn = _gdb()
+        conn.execute("""INSERT INTO weekly_cash_reports 
+            (agent_name, matricule, report_number, week_start, week_end, items_json,
+             total_credit, total_debit, reste_caisse, deposit_date, created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (request.form.get('agent_name',''), request.form.get('matricule',''),
+             request.form.get('report_number',''), request.form.get('week_start',''),
+             request.form.get('week_end',''), json.dumps(items),
+             total_c, total_d, total_c - total_d,
+             request.form.get('deposit_date',''), session['user_id']))
+        conn.commit(); conn.close()
+        flash("Rapport de caisse créé", "success")
+        return redirect('/comptabilite/rapport-caisse')
+    return render_template('rapport_caisse_new.html', page='comptabilite')
+
+@app.route('/comptabilite/rapport-caisse/import', methods=['POST'])
+@permission_required('comptabilite_edit')
+def rapport_caisse_import():
+    if 'file' not in request.files:
+        flash("Fichier requis", "error"); return redirect('/comptabilite/rapport-caisse')
+    f = request.files['file']
+    
+    import openpyxl
+    wb = openpyxl.load_workbook(f, data_only=True)
+    ws = wb.active
+    
+    agent = str(ws.cell(2,1).value or '').replace("Nom et Prénom De L'agent:", '').replace("Nom et Prénom De L\u2019agent:", '').strip().lstrip(': ')
+    matricule = str(ws.cell(3,1).value or '').replace('N⁰ Matricule:', '').strip()
+    report_num = str(ws.cell(4,1).value or '').replace('N⁰ Rapport:', '').strip()
+    report_date = str(ws.cell(5,1).value or '').replace('Rapport Du:', '').strip()
+    
+    items = []
+    for row in ws.iter_rows(min_row=7, max_row=ws.max_row, values_only=True):
+        if not row[0] or str(row[0]).strip() == '': continue
+        try: int(str(row[0]).strip())
+        except: continue
+        desc = str(row[2] or '').strip()
+        credit = float(row[3] or 0) if row[3] and str(row[3]).replace('.','').replace('-','').isdigit() else 0
+        pc = str(row[4] or '').strip()
+        debit = float(row[5] or 0) if row[5] and str(row[5]).replace('.','').replace('-','').isdigit() else 0
+        date_val = str(row[1] or '')[:10]
+        if desc or credit > 0 or debit > 0:
+            items.append({'n': len(items)+1, 'date': date_val, 'description': desc,
+                         'credit': credit, 'pc': pc, 'debit': debit})
+    
+    total_c = sum(it['credit'] for it in items)
+    total_d = sum(it['debit'] for it in items)
+    
+    conn = _gdb()
+    conn.execute("""INSERT INTO weekly_cash_reports 
+        (agent_name, matricule, report_number, week_start, items_json,
+         total_credit, total_debit, reste_caisse, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?)""",
+        (agent, matricule, report_num, report_date, json.dumps(items),
+         total_c, total_d, total_c - total_d, session['user_id']))
+    conn.commit(); conn.close()
+    
+    flash(f"Rapport importé — {agent} — {len(items)} lignes, Crédit: {total_c:,.0f}, Débit: {total_d:,.0f}", "success")
+    return redirect('/comptabilite/rapport-caisse')
+
+@app.route('/comptabilite/rapport-caisse/view/<int:rid>')
+@permission_required('comptabilite')
+def rapport_caisse_view(rid):
+    conn = _gdb()
+    r = conn.execute("SELECT * FROM weekly_cash_reports WHERE id=?", (rid,)).fetchone()
+    conn.close()
+    if not r: flash("Non trouvé","error"); return redirect('/comptabilite/rapport-caisse')
+    report = dict(r)
+    report['items'] = json.loads(report.get('items_json','[]') or '[]')
+    return render_template('rapport_caisse_view.html', page='comptabilite', report=report, report_items=report['items'])
+
+@app.route('/comptabilite/rapport-caisse/pdf/<int:rid>')
+@permission_required('comptabilite')
+def rapport_caisse_pdf(rid):
+    conn = _gdb()
+    r = conn.execute("SELECT * FROM weekly_cash_reports WHERE id=?", (rid,)).fetchone()
+    conn.close()
+    if not r: flash("Non trouvé","error"); return redirect('/comptabilite/rapport-caisse')
+    report = dict(r)
+    items = json.loads(report.get('items_json','[]') or '[]')
+    
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib.colors import HexColor, white
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    
+    output = os.path.join(app.config['UPLOAD_FOLDER'], f'rapport_caisse_{rid}.pdf')
+    os.makedirs(os.path.dirname(output), exist_ok=True)
+    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=10*mm, bottomMargin=10*mm)
+    
+    BG = HexColor('#44546A'); BL = HexColor('#4472C4'); WH = white; BK = HexColor('#222')
+    hw = ParagraphStyle('hw', fontName='Helvetica-Bold', fontSize=8, textColor=WH, alignment=TA_CENTER)
+    tc = ParagraphStyle('tc', fontSize=8, alignment=TA_CENTER, textColor=BK)
+    tr = ParagraphStyle('tr', fontSize=8, alignment=TA_RIGHT, textColor=BK)
+    tb = ParagraphStyle('tb', fontName='Helvetica-Bold', fontSize=8, alignment=TA_RIGHT, textColor=BK)
+    
+    story = []
+    pw = 186*mm
+    
+    story.append(Paragraph("<b>RAPPORT CAISSE HEBDOMADAIRE DES DEPENSES</b>",
+        ParagraphStyle('t', fontName='Helvetica-Bold', fontSize=14, textColor=BG, alignment=TA_CENTER, spaceAfter=6*mm)))
+    
+    info = f"Agent : <b>{report['agent_name']}</b>  |  Matricule : {report['matricule']}  |  {report['report_number']}  |  {report['week_start']}"
+    story.append(Paragraph(info, ParagraphStyle('i', fontSize=9, textColor=BK, alignment=TA_LEFT, spaceAfter=4*mm)))
+    
+    hdrs = ['N°', 'DATE', 'DESCRIPTION', 'CREDITE', 'N° P.C', 'DEBITE']
+    cw = [8*mm, 20*mm, 68*mm, 24*mm, 30*mm, 24*mm]
+    td = [[Paragraph(h, hw) for h in hdrs]]
+    
+    for it in items:
+        td.append([
+            Paragraph(str(it['n']), tc), Paragraph(str(it.get('date',''))[:10], tc),
+            Paragraph(it.get('description',''), ParagraphStyle('d', fontSize=7, textColor=BK)),
+            Paragraph(f"{it['credit']:,.0f}" if it['credit'] else '', tr),
+            Paragraph(it.get('pc',''), ParagraphStyle('pc', fontSize=6, textColor=BK, alignment=TA_CENTER)),
+            Paragraph(f"{it['debit']:,.0f}" if it['debit'] else '', tr),
+        ])
+    
+    # Totals row
+    td.append([Paragraph('', tc), Paragraph('Reste En Caisse:', ParagraphStyle('rc', fontName='Helvetica-Bold', fontSize=8, textColor=BK)),
+        Paragraph(f"{report['reste_caisse']:,.0f}", tb),
+        Paragraph(f"{report['total_credit']:,.0f}", tb),
+        Paragraph('<b>TOTAL</b>', ParagraphStyle('tt', fontName='Helvetica-Bold', fontSize=8, textColor=BK, alignment=TA_CENTER)),
+        Paragraph(f"{report['total_debit']:,.0f}", tb)])
+    
+    t = Table(td, colWidths=cw, repeatRows=1)
+    sc = [('BACKGROUND', (0,0), (-1,0), BL), ('TEXTCOLOR', (0,0), (-1,0), WH),
+          ('BOX', (0,0), (-1,-1), 0.5, HexColor('#8EAADB')),
+          ('INNERGRID', (0,0), (-1,-1), 0.3, HexColor('#B4C6E7')),
+          ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+          ('TOPPADDING', (0,0), (-1,-1), 3), ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+          ('BACKGROUND', (0,-1), (-1,-1), HexColor('#E2EFDA'))]
+    for i in range(2, len(td)-1, 2):
+        sc.append(('BACKGROUND', (0,i), (-1,i), HexColor('#F2F2F2')))
+    t.setStyle(TableStyle(sc))
+    story.append(t)
+    
+    story.append(Spacer(1, 6*mm))
+    story.append(Paragraph(f"Date de Dépôt Rapport Comptabilité : {report.get('deposit_date','')}", ParagraphStyle('ft', fontSize=8, textColor=HexColor('#888'))))
+    story.append(Spacer(1, 4*mm))
+    story.append(Paragraph("Signature Et Cachet Caisse :", ParagraphStyle('ft2', fontSize=8, textColor=HexColor('#888'))))
+    
+    doc.build(story)
+    return send_file(output, as_attachment=True, download_name=f"Rapport_Caisse_{report['agent_name'].replace(' ','_')}.pdf")
+
+@app.route('/comptabilite/rapport-caisse/excel/<int:rid>')
+@permission_required('comptabilite')
+def rapport_caisse_excel(rid):
+    conn = _gdb()
+    r = conn.execute("SELECT * FROM weekly_cash_reports WHERE id=?", (rid,)).fetchone()
+    conn.close()
+    if not r: flash("Non trouvé","error"); return redirect('/comptabilite/rapport-caisse')
+    report = dict(r)
+    items = json.loads(report.get('items_json','[]') or '[]')
+    
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Rapport Caisse"
+    
+    ws.merge_cells('A1:F1'); ws['A1'] = 'RAPPORT CAISSE HEBDOMADAIRE DES DEPENSES'
+    ws['A1'].font = Font(bold=True, size=14); ws['A1'].alignment = Alignment(horizontal='center')
+    ws['A2'] = f"Nom et Prénom De L'agent: {report['agent_name']}"
+    ws['A3'] = f"N° Matricule: {report['matricule']}"
+    ws['A4'] = f"N° Rapport: {report['report_number']}"
+    ws['A5'] = f"Rapport Du: {report['week_start']}"
+    
+    hdrs = ['N°', 'DATE', 'DESCRIPTION', 'CREDITE', 'N° P.C', 'DEBITE']
+    hfill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    hfont = Font(bold=True, color='FFFFFF')
+    for i, h in enumerate(hdrs, 1):
+        c = ws.cell(6, i, h); c.font = hfont; c.fill = hfill; c.alignment = Alignment(horizontal='center')
+    
+    for idx, it in enumerate(items):
+        row = 7 + idx
+        ws.cell(row, 1, it['n'])
+        ws.cell(row, 2, it.get('date','')[:10])
+        ws.cell(row, 3, it.get('description',''))
+        if it['credit']: ws.cell(row, 4, it['credit'])
+        ws.cell(row, 5, it.get('pc',''))
+        if it['debit']: ws.cell(row, 6, it['debit'])
+    
+    tr = 7 + len(items)
+    ws.cell(tr, 2, 'Reste En Caisse:').font = Font(bold=True)
+    ws.cell(tr, 3, report['reste_caisse']).font = Font(bold=True)
+    ws.cell(tr, 4, report['total_credit']).font = Font(bold=True)
+    ws.cell(tr, 5, 'TOTAL').font = Font(bold=True)
+    ws.cell(tr, 6, report['total_debit']).font = Font(bold=True)
+    
+    ws.column_dimensions['A'].width = 5; ws.column_dimensions['B'].width = 14
+    ws.column_dimensions['C'].width = 45; ws.column_dimensions['D'].width = 14
+    ws.column_dimensions['E'].width = 22; ws.column_dimensions['F'].width = 14
+    
+    output = os.path.join(app.config['UPLOAD_FOLDER'], f'rapport_caisse_{rid}.xlsx')
+    os.makedirs(os.path.dirname(output), exist_ok=True)
+    wb.save(output)
+    return send_file(output, as_attachment=True, download_name=f"Rapport_Caisse_{report['agent_name'].replace(' ','_')}.xlsx")
 
 
 # ======================== RAPPORTS DE VISITE ========================

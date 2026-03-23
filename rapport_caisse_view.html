@@ -1,0 +1,57 @@
+{% extends "base.html" %}{% block title %}WannyGest - Rapport caisse{% endblock %}{% block content %}
+<style>
+@media print { .no-print{display:none!important} .card{box-shadow:none!important;border:none!important} }
+</style>
+<div class="page-header no-print"><h1>📋 Rapport de caisse — {{ report.agent_name }}</h1>
+<div style="display:flex;gap:6px">
+<button class="btn btn-sm btn-outline" onclick="window.print()">🖨️ Imprimer</button>
+<a href="/comptabilite/rapport-caisse/pdf/{{ report.id }}" class="btn btn-sm btn-outline">📄 PDF</a>
+<a href="/comptabilite/rapport-caisse/excel/{{ report.id }}" class="btn btn-sm btn-outline">📊 Excel</a>
+<a href="/comptabilite/rapport-caisse" class="btn btn-outline btn-sm">← Retour</a>
+</div></div>
+
+<div class="card"><div class="card-body">
+    <div style="text-align:center;margin-bottom:16px">
+        <h2 style="font-size:18px;color:#44546A;margin:0">RAPPORT CAISSE HEBDOMADAIRE DES DEPENSES</h2>
+    </div>
+    
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;font-size:12px">
+        <div><strong>Nom et Prénom :</strong> {{ report.agent_name }}</div>
+        <div><strong>N° Rapport :</strong> {{ report.report_number or '-' }}</div>
+        <div><strong>N° Matricule :</strong> {{ report.matricule or '-' }}</div>
+        <div><strong>Rapport du :</strong> {{ report.week_start or '-' }}</div>
+    </div>
+    
+    <div class="table-wrap"><table style="width:100%;font-size:12px">
+    <thead><tr style="background:#4472C4;color:#fff">
+        <th style="width:30px;text-align:center">N°</th><th style="width:90px">DATE</th><th>DESCRIPTION</th>
+        <th style="width:90px;text-align:right">CREDITE</th><th style="width:110px;text-align:center">N° P.C</th>
+        <th style="width:90px;text-align:right">DEBITE</th>
+    </tr></thead>
+    <tbody>
+    {% for it in report_items %}
+    <tr style="{% if loop.index is divisibleby 2 %}background:#f8f8f8{% endif %}">
+        <td style="text-align:center">{{ it.n }}</td>
+        <td>{{ it.date[:10] if it.date else '' }}</td>
+        <td>{{ it.description }}</td>
+        <td style="text-align:right;color:#2e7d32;font-weight:{% if it.credit %}600{% else %}400{% endif %}">{% if it.credit %}{{ '{:,.0f}'.format(it.credit) }}{% endif %}</td>
+        <td style="text-align:center;font-size:10px">{{ it.pc }}</td>
+        <td style="text-align:right;color:#c53030;font-weight:{% if it.debit %}600{% else %}400{% endif %}">{% if it.debit %}{{ '{:,.0f}'.format(it.debit) }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+    <tr style="background:#E2EFDA;font-weight:700;border-top:2px solid #4472C4">
+        <td></td>
+        <td>Reste En Caisse :</td>
+        <td style="text-align:right;font-size:14px;color:{% if report.reste_caisse >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(report.reste_caisse) }}</td>
+        <td style="text-align:right;color:#2e7d32">{{ '{:,.0f}'.format(report.total_credit) }}</td>
+        <td style="text-align:center">TOTAL</td>
+        <td style="text-align:right;color:#c53030">{{ '{:,.0f}'.format(report.total_debit) }}</td>
+    </tr>
+    </tbody></table></div>
+    
+    <div style="margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:12px;color:#888">
+        <div><strong>Date de Dépôt Rapport Comptabilité :</strong> {{ report.deposit_date or '________________' }}</div>
+        <div><strong>Signature Et Cachet Caisse :</strong></div>
+    </div>
+</div></div>
+{% endblock %}

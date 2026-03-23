@@ -1,0 +1,53 @@
+{% extends "base.html" %}{% block title %}WannyGest - Nouveau rapport caisse{% endblock %}{% block content %}
+<div class="page-header"><h1>📋 Nouveau rapport de caisse</h1><a href="/comptabilite/rapport-caisse" class="btn btn-outline btn-sm">← Retour</a></div>
+<div class="card"><div class="card-body"><form method="post">
+    <div class="form-row"><div class="form-group"><label>Agent *</label><input type="text" name="agent_name" required placeholder="MIHIN PRISCA"></div>
+    <div class="form-group"><label>Matricule</label><input type="text" name="matricule"></div></div>
+    <div class="form-row"><div class="form-group"><label>N° Rapport</label><input type="text" name="report_number" placeholder="SEMAINE N° 2"></div>
+    <div class="form-group"><label>Date du rapport</label><input type="date" name="week_start" required></div>
+    <div class="form-group"><label>Date de dépôt</label><input type="date" name="deposit_date"></div></div>
+    
+    <h4 style="font-size:13px;margin:16px 0 8px;color:#1a7a6d;border-bottom:1px solid #eee;padding-bottom:4px">Lignes du rapport</h4>
+    <div id="lines" style="max-height:400px;overflow-y:auto">
+        <div style="display:grid;grid-template-columns:30px 100px 1fr 100px 120px 100px 30px;gap:4px;font-size:10px;font-weight:700;color:#888;margin-bottom:4px;padding:0 4px">
+            <span>N°</span><span>Date</span><span>Description</span><span>Crédité</span><span>N° P.C</span><span>Débité</span><span></span>
+        </div>
+    </div>
+    <button type="button" class="btn btn-outline btn-sm" onclick="addLine()" style="margin-top:8px">+ Ajouter une ligne</button>
+    
+    <div style="display:flex;gap:12px;margin-top:14px;padding:12px;background:#f8faf9;border-radius:8px">
+        <div>Total crédité : <strong id="sumC" style="color:#2e7d32">0</strong></div>
+        <div>Total débité : <strong id="sumD" style="color:#c53030">0</strong></div>
+        <div>Reste en caisse : <strong id="sumR">0</strong></div>
+    </div>
+    
+    <div style="display:flex;gap:10px;margin-top:14px"><a href="/comptabilite/rapport-caisse" class="btn btn-outline">Annuler</a><button type="submit" class="btn btn-primary">💾 Enregistrer</button></div>
+</form></div></div>
+<script>
+var lineN = 0;
+function addLine() {
+    lineN++;
+    var box = document.getElementById('lines');
+    var d = document.createElement('div');
+    d.style.cssText = 'display:grid;grid-template-columns:30px 100px 1fr 100px 120px 100px 30px;gap:4px;margin-bottom:2px';
+    d.innerHTML = '<span style="font-size:11px;padding:6px 0;text-align:center">' + lineN + '</span>' +
+        '<input type="date" name="date_' + lineN + '" required style="font-size:11px;padding:4px">' +
+        '<input type="text" name="desc_' + lineN + '" placeholder="Description..." style="font-size:11px;padding:4px">' +
+        '<input type="number" name="credit_' + lineN + '" min="0" step="1" placeholder="0" oninput="calcTotals()" style="font-size:11px;padding:4px">' +
+        '<input type="text" name="pc_' + lineN + '" placeholder="N° P.C" style="font-size:11px;padding:4px">' +
+        '<input type="number" name="debit_' + lineN + '" min="0" step="1" placeholder="0" oninput="calcTotals()" style="font-size:11px;padding:4px">' +
+        '<button type="button" onclick="this.parentNode.remove();calcTotals()" style="background:none;border:none;color:#c53030;cursor:pointer;font-size:14px">×</button>';
+    box.appendChild(d);
+}
+function calcTotals() {
+    var c=0, d=0;
+    document.querySelectorAll('[name^="credit_"]').forEach(function(i){c+=parseFloat(i.value)||0});
+    document.querySelectorAll('[name^="debit_"]').forEach(function(i){d+=parseFloat(i.value)||0});
+    document.getElementById('sumC').textContent = c.toLocaleString();
+    document.getElementById('sumD').textContent = d.toLocaleString();
+    document.getElementById('sumR').textContent = (c-d).toLocaleString();
+}
+// Start with 5 lines
+for(var i=0;i<5;i++) addLine();
+</script>
+{% endblock %}

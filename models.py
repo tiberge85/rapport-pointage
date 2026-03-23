@@ -196,12 +196,12 @@ def init_db():
     
     # Permissions par défaut — tous les rôles
     default_perms = {
-        'admin': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j'],
-        'dg': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j'],
+        'admin': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis'],
+        'dg': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis'],
         'rh': ['fichiers', 'clients', 'dashboard', 'envoyer', 'contrats', 'rapports_j'],
         'technicien': ['traitement', 'dashboard', 'visites', 'rapports_j'],
         'commercial': ['dashboard', 'clients', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'contrats', 'rapports_j'],
-        'comptable': ['dashboard', 'comptabilite', 'comptabilite_edit', 'clients', 'caisse_sortie', 'rapports_j'],
+        'comptable': ['dashboard', 'comptabilite', 'comptabilite_edit', 'clients', 'caisse_sortie', 'rapports_j', 'convertir_devis'],
         'moyens_generaux': ['dashboard', 'moyens_generaux', 'moyens_generaux_edit', 'clients', 'rapports_j'],
         'informatique': ['dashboard', 'informatique', 'traitement', 'visites', 'projets', 'rapports_j'],
     }
@@ -2064,3 +2064,24 @@ def get_live_champion():
             'is_live': True
         }
     return None
+
+def migrate_v13():
+    conn = get_db()
+    # Add extra fields to invoices
+    for col, default in [('objet',''), ('items_json',''), ('total_ht','0'), ('tva','0'), ('total_ttc','0'),
+                         ('devis_id','0'), ('due_date',''), ('payment_method',''), ('description','')]:
+        try: conn.execute(f"ALTER TABLE invoices ADD COLUMN {col} TEXT DEFAULT '{default}'")
+        except: pass
+    # Weekly cash report table
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS weekly_cash_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_name TEXT, matricule TEXT, report_number TEXT,
+            week_start TEXT, week_end TEXT, items_json TEXT,
+            total_credit REAL DEFAULT 0, total_debit REAL DEFAULT 0,
+            reste_caisse REAL DEFAULT 0,
+            deposit_date TEXT, status TEXT DEFAULT 'brouillon',
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    conn.commit(); conn.close()
