@@ -2268,3 +2268,19 @@ def migrate_v18():
         );
     ''')
     conn.commit(); conn.close()
+
+def migrate_v19():
+    conn = get_db()
+    new_cols = [
+        'birth_place', 'birth_city', 'civil_status', 'nationality', 'religion',
+        'id_type', 'id_expiry', 'id_place', 'resident', 'address', 'education_level',
+        'work_location', 'bank_account', 'bank_name_emp', 'bank_holder',
+        'fiscal_code', 'hourly_rate', 'facebook', 'linkedin', 'skype',
+        'direction', 'email_signature', 'other_info', 'is_admin',
+        'code_rh', 'birth_date', 'gender', 'blood_type',
+        'emergency_contact', 'emergency_tel', 'photo'
+    ]
+    for col in new_cols:
+        try: conn.execute(f"ALTER TABLE employees ADD COLUMN {col} TEXT DEFAULT ''")
+        except: pass
+    conn.commit(); conn.close()

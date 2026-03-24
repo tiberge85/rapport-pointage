@@ -109,6 +109,8 @@ from models import migrate_v17
 migrate_v17()
 from models import migrate_v18
 migrate_v18()
+from models import migrate_v19
+migrate_v19()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -117,6 +119,8 @@ from models import migrate_v17
 migrate_v17()
 from models import migrate_v18
 migrate_v18()
+from models import migrate_v19
+migrate_v19()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -2595,31 +2599,22 @@ def rh_personnel():
 def rh_personnel_add():
     if request.method == 'POST':
         from models import get_db
-        create_employee(
-            first_name=request.form['first_name'],
-            last_name=request.form['last_name'],
-            matricule=request.form.get('matricule', ''),
-            email=request.form.get('email', ''),
-            tel=request.form.get('tel', ''),
-            position=request.form.get('position', ''),
-            department=request.form.get('department', ''),
-            hire_date=request.form.get('hire_date', ''),
-            contract_type=request.form.get('contract_type', 'CDI'),
-            salary=float(request.form.get('salary', 0) or 0),
-            insurance=request.form.get('insurance', ''),
-            insurance_number=request.form.get('insurance_number', ''),
-            emergency_contact=request.form.get('emergency_contact', ''),
-            emergency_tel=request.form.get('emergency_tel', ''),
-            code_rh=request.form.get('code_rh', ''),
-            birth_date=request.form.get('birth_date', ''),
-            gender=request.form.get('gender', ''),
-            blood_type=request.form.get('blood_type', ''),
-        )
+        fields = {}
+        for key in ['first_name','last_name','matricule','email','tel','position','department',
+                     'hire_date','contract_type','insurance','insurance_number',
+                     'emergency_contact','emergency_tel','code_rh','birth_date','gender','blood_type',
+                     'birth_place','birth_city','civil_status','nationality','religion',
+                     'id_type','id_expiry','id_place','resident','address','education_level',
+                     'work_location','bank_account','bank_name_emp','bank_holder',
+                     'fiscal_code','hourly_rate','facebook','linkedin','skype',
+                     'direction','email_signature','other_info','status']:
+            fields[key] = request.form.get(key, '')
+        fields['salary'] = float(request.form.get('salary', 0) or 0)
+        create_employee(**fields)
         # Get new employee ID for photo
         conn = get_db()
         new_emp = conn.execute("SELECT id FROM employees ORDER BY id DESC LIMIT 1").fetchone()
         conn.close()
-        # Handle photo
         if new_emp and 'photo' in request.files:
             f = request.files['photo']
             if f and f.filename:
@@ -2633,7 +2628,7 @@ def rh_personnel_add():
                     update_employee(new_emp['id'], photo=fname)
         user = get_user_by_id(session['user_id'])
         log_activity(session['user_id'], user['full_name'] if user else '?', 'RH',
-                    f"Employé ajouté: {request.form['first_name']} {request.form['last_name']}", request.remote_addr)
+                    f"Employé ajouté: {request.form.get('first_name','')} {request.form.get('last_name','')}", request.remote_addr)
         flash("Employé ajouté", "success")
         return redirect(url_for('rh_personnel'))
     return render_template('rh_personnel_add.html', page='personnel')
@@ -2646,20 +2641,18 @@ def rh_personnel_edit(eid):
         flash("Employé non trouvé", "error")
         return redirect(url_for('rh_personnel'))
     if request.method == 'POST':
-        update_employee(eid,
-            first_name=request.form['first_name'], last_name=request.form['last_name'],
-            matricule=request.form.get('matricule', ''), code_rh=request.form.get('code_rh', ''),
-            email=request.form.get('email', ''),
-            tel=request.form.get('tel', ''), position=request.form.get('position', ''),
-            department=request.form.get('department', ''), hire_date=request.form.get('hire_date', ''),
-            contract_type=request.form.get('contract_type', 'CDI'),
-            salary=float(request.form.get('salary', 0) or 0),
-            insurance=request.form.get('insurance', ''), insurance_number=request.form.get('insurance_number', ''),
-            gender=request.form.get('gender', ''), birth_date=request.form.get('birth_date', ''),
-            blood_type=request.form.get('blood_type', ''),
-            emergency_contact=request.form.get('emergency_contact', ''),
-            emergency_tel=request.form.get('emergency_tel', ''),
-            status=request.form.get('status', 'actif'))
+        fields = {}
+        for key in ['first_name','last_name','matricule','email','tel','position','department',
+                     'hire_date','contract_type','insurance','insurance_number',
+                     'emergency_contact','emergency_tel','code_rh','birth_date','gender','blood_type',
+                     'birth_place','birth_city','civil_status','nationality','religion',
+                     'id_type','id_expiry','id_place','resident','address','education_level',
+                     'work_location','bank_account','bank_name_emp','bank_holder',
+                     'fiscal_code','hourly_rate','facebook','linkedin','skype',
+                     'direction','email_signature','other_info','status']:
+            fields[key] = request.form.get(key, '')
+        fields['salary'] = float(request.form.get('salary', 0) or 0)
+        update_employee(eid, **fields)
         # Photo
         if 'photo' in request.files and request.files['photo'].filename:
             photo = request.files['photo']

@@ -1,28 +1,148 @@
-{% extends "base.html" %}
-{% block title %}WannyGest - Modifier employé{% endblock %}
-{% block content %}
-<div class="page-header"><h1>✏️ {{ emp.first_name }} {{ emp.last_name }}</h1><a href="/rh/personnel" class="btn btn-outline btn-sm">← Retour</a></div>
-<div class="card" style="max-width:750px"><div class="card-body"><form method="post" enctype="multipart/form-data">
-    
-    <h4 style="font-size:13px;color:#1a7a6d;margin:0 0 10px;border-bottom:1px solid #eee;padding-bottom:5px">👤 Identité</h4>
-    <div class="form-row"><div class="form-group"><label>Prénom *</label><input type="text" name="first_name" value="{{ emp.first_name }}" required></div><div class="form-group"><label>Nom *</label><input type="text" name="last_name" value="{{ emp.last_name }}" required></div></div>
-    <div class="form-row"><div class="form-group"><label>Code RH</label><input type="text" name="code_rh" value="{{ emp.code_rh or '' }}"></div><div class="form-group"><label>Matricule</label><input type="text" name="matricule" value="{{ emp.matricule or '' }}"></div></div>
-    <div class="form-row"><div class="form-group"><label>Genre</label><select name="gender"><option value="">—</option><option {% if emp.gender=='M' %}selected{% endif %} value="M">Masculin</option><option {% if emp.gender=='F' %}selected{% endif %} value="F">Féminin</option></select></div><div class="form-group"><label>Date de naissance</label><input type="date" name="birth_date" value="{{ emp.birth_date or '' }}"></div></div>
-    <div class="form-row"><div class="form-group"><label>Groupe sanguin</label><select name="blood_type"><option value="">—</option>{% for bt in ['A+','A-','B+','B-','AB+','AB-','O+','O-'] %}<option {% if emp.blood_type==bt %}selected{% endif %}>{{ bt }}</option>{% endfor %}</select></div>
-    <div class="form-group"><label>Photo</label><input type="file" name="photo" accept="image/*">{% if emp.photo %}<div style="font-size:10px;color:#888;margin-top:2px">Actuelle : {{ emp.photo }}</div>{% endif %}</div></div>
-    
-    <h4 style="font-size:13px;color:#1a7a6d;margin:16px 0 10px;border-bottom:1px solid #eee;padding-bottom:5px">📞 Contact</h4>
-    <div class="form-row"><div class="form-group"><label>Email</label><input type="email" name="email" value="{{ emp.email or '' }}"></div><div class="form-group"><label>Téléphone</label><input type="text" name="tel" value="{{ emp.tel or '' }}"></div></div>
-    <div class="form-row"><div class="form-group"><label>Contact d'urgence</label><input type="text" name="emergency_contact" value="{{ emp.emergency_contact or '' }}"></div><div class="form-group"><label>Tél urgence</label><input type="text" name="emergency_tel" value="{{ emp.emergency_tel or '' }}"></div></div>
-    
-    <h4 style="font-size:13px;color:#1a7a6d;margin:16px 0 10px;border-bottom:1px solid #eee;padding-bottom:5px">💼 Emploi</h4>
-    <div class="form-row"><div class="form-group"><label>Poste</label><input type="text" name="position" value="{{ emp.position or '' }}"></div><div class="form-group"><label>Département</label><input type="text" name="department" value="{{ emp.department or '' }}"></div></div>
-    <div class="form-row"><div class="form-group"><label>Date d'embauche</label><input type="date" name="hire_date" value="{{ emp.hire_date or '' }}"></div><div class="form-group"><label>Type de contrat</label><select name="contract_type">{% for t in ['CDI','CDD','Stage','Freelance'] %}<option {% if emp.contract_type==t %}selected{% endif %}>{{ t }}</option>{% endfor %}</select></div></div>
-    <div class="form-row"><div class="form-group"><label>Salaire (FCFA)</label><input type="number" name="salary" step="1" min="0" value="{{ emp.salary or 0 }}"></div><div class="form-group"><label>Statut</label><select name="status"><option value="actif" {% if emp.status=='actif' %}selected{% endif %}>Actif</option><option value="inactif" {% if emp.status=='inactif' %}selected{% endif %}>Inactif</option><option value="suspendu" {% if emp.status=='suspendu' %}selected{% endif %}>Suspendu</option></select></div></div>
-    
-    <h4 style="font-size:13px;color:#1a7a6d;margin:16px 0 10px;border-bottom:1px solid #eee;padding-bottom:5px">🏥 Assurance</h4>
-    <div class="form-row"><div class="form-group"><label>Assurance</label><input type="text" name="insurance" value="{{ emp.insurance or '' }}"></div><div class="form-group"><label>N° Assurance</label><input type="text" name="insurance_number" value="{{ emp.insurance_number or '' }}"></div></div>
-    
-    <div style="display:flex;gap:10px;margin-top:18px"><a href="/rh/personnel" class="btn btn-outline">Annuler</a><button type="submit" class="btn btn-primary">💾 Sauvegarder</button></div>
+{% extends "base.html" %}{% block title %}WannyGest - Modifier employé{% endblock %}{% block content %}
+<style>
+.emp-tabs{display:flex;gap:0;border-bottom:2px solid #eee;margin-bottom:16px}
+.emp-tab{padding:10px 16px;font-size:12px;font-weight:600;color:#888;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;text-decoration:none}
+.emp-tab:hover{color:#1a7a6d}.emp-tab.active{color:#1a7a6d;border-bottom-color:#1a7a6d}
+.emp-section{display:none}.emp-section.active{display:block}
+.f3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.f2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.form-group label{font-size:11px;color:#555;margin-bottom:2px}
+</style>
+<div class="page-header"><h1>✏️ Modifier — {{ emp.first_name }} {{ emp.last_name }}</h1><a href="/rh/personnel" class="btn btn-outline btn-sm">← Retour</a></div>
+<div class="card"><div class="card-body">
+<form method="post" enctype="multipart/form-data">
+
+<div class="emp-tabs">
+    <a class="emp-tab active" onclick="showTab('profil')">👤 Profil</a>
+    <a class="emp-tab" onclick="showTab('contrat')">📄 Contrat</a>
+    <a class="emp-tab" onclick="showTab('banque')">🏦 Banque & Fiscal</a>
+    <a class="emp-tab" onclick="showTab('contact')">📞 Contact & Réseaux</a>
+    <a class="emp-tab" onclick="showTab('pieces')">📎 Pièces jointes</a>
+</div>
+
+<!-- PROFIL -->
+<div class="emp-section active" id="tab-profil">
+<div style="display:flex;gap:16px;margin-bottom:14px">
+    <div style="flex:0 0 100px;text-align:center">
+        <div style="width:80px;height:80px;border-radius:50%;background:#e8e8e8;margin:0 auto 6px;display:flex;align-items:center;justify-content:center;font-size:28px;color:#999;overflow:hidden" id="photoPreview">{% if emp.photo %}<img src="/uploads/photos/{{ emp.photo }}" style="width:80px;height:80px;border-radius:50%;object-fit:cover">{% else %}👤{% endif %}</div>
+        <label style="font-size:10px;color:#1a7a6d;cursor:pointer;font-weight:600">📷 Changer<input type="file" name="photo" accept="image/*" style="display:none" onchange="previewPhoto(this)"></label>
+    </div>
+    <div style="flex:1">
+        <div class="f3">
+            <div class="form-group"><label>Code RH</label><input type="text" name="code_rh" value="{{ emp.code_rh or '' }}"></div>
+            <div class="form-group"><label>Nom complet</label><input type="text" value="{{ emp.first_name }} {{ emp.last_name }}" disabled style="background:#f5f5f5"></div>
+            <div class="form-group"><label>Sexe</label><select name="gender">{% for g in ['','Homme','Femme'] %}<option {% if emp.gender==g %}selected{% endif %}>{{ g or '—' }}</option>{% endfor %}</select></div>
+        </div>
+    </div>
+</div>
+<div class="f3">
+    <div class="form-group"><label>Prénom *</label><input type="text" name="first_name" value="{{ emp.first_name }}" required></div>
+    <div class="form-group"><label>Nom *</label><input type="text" name="last_name" value="{{ emp.last_name }}" required></div>
+    <div class="form-group"><label>Matricule</label><input type="text" name="matricule" value="{{ emp.matricule or '' }}"></div>
+</div>
+<div class="f3">
+    <div class="form-group"><label>Date de naissance</label><input type="date" name="birth_date" value="{{ emp.birth_date or '' }}"></div>
+    <div class="form-group"><label>Lieu de naissance</label><input type="text" name="birth_place" value="{{ emp.birth_place or '' }}"></div>
+    <div class="form-group"><label>Ville natale</label><input type="text" name="birth_city" value="{{ emp.birth_city or '' }}"></div>
+</div>
+<div class="f3">
+    <div class="form-group"><label>État civil</label><select name="civil_status">{% for s in ['','Célibataire','Marié(e)','Divorcé(e)','Veuf/Veuve'] %}<option {% if emp.civil_status==s %}selected{% endif %}>{{ s or '—' }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Nationalité</label><input type="text" name="nationality" value="{{ emp.nationality or 'Ivoirienne' }}"></div>
+    <div class="form-group"><label>Religion</label><input type="text" name="religion" value="{{ emp.religion or '' }}"></div>
+</div>
+<div class="f3">
+    <div class="form-group"><label>Pièce d'identité</label><input type="text" name="id_type" value="{{ emp.id_type or '' }}"></div>
+    <div class="form-group"><label>Date d'expiration</label><input type="date" name="id_expiry" value="{{ emp.id_expiry or '' }}"></div>
+    <div class="form-group"><label>Lieu d'émission</label><input type="text" name="id_place" value="{{ emp.id_place or '' }}"></div>
+</div>
+<div class="f3">
+    <div class="form-group"><label>Résident</label><input type="text" name="resident" value="{{ emp.resident or '' }}"></div>
+    <div class="form-group"><label>Adresse actuelle</label><input type="text" name="address" value="{{ emp.address or '' }}"></div>
+    <div class="form-group"><label>Niveau d'éducation</label><select name="education_level">{% for l in ['','Primaire','Secondaire','BAC','BTS/DUT','Licence','Master','Doctorat','Autre'] %}<option {% if emp.education_level==l %}selected{% endif %}>{{ l or '—' }}</option>{% endfor %}</select></div>
+</div>
+</div>
+
+<!-- CONTRAT -->
+<div class="emp-section" id="tab-contrat">
+<div class="f3">
+    <div class="form-group"><label>Statut</label><select name="status">{% for s in ['actif','inactif','suspendu'] %}<option {% if emp.status==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Poste</label><input type="text" name="position" value="{{ emp.position or '' }}"></div>
+    <div class="form-group"><label>Lieu de travail</label><input type="text" name="work_location" value="{{ emp.work_location or '' }}"></div>
+</div>
+<div class="f3">
+    <div class="form-group"><label>Département</label><input type="text" name="department" value="{{ emp.department or '' }}"></div>
+    <div class="form-group"><label>Direction</label><select name="direction">{% for d in ['','Direction Générale','Direction Technique','Direction Commerciale','Direction Administrative','Direction Financière'] %}<option {% if emp.direction==d %}selected{% endif %}>{{ d or 'Système par défaut' }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Date d'embauche</label><input type="date" name="hire_date" value="{{ emp.hire_date or '' }}"></div>
+</div>
+<div class="f3">
+    <div class="form-group"><label>Type de contrat</label><select name="contract_type">{% for ct in ['CDI','CDD','Stage','Freelance','Intérim'] %}<option {% if emp.contract_type==ct %}selected{% endif %}>{{ ct }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Salaire brut (FCFA)</label><input type="number" name="salary" step="1" value="{{ emp.salary or 0 }}"></div>
+    <div class="form-group"><label>Taux horaire (XOF)</label><input type="number" name="hourly_rate" step="1" value="{{ emp.hourly_rate or 0 }}"></div>
+</div>
+<div class="f3">
+    <div class="form-group"><label>Assurance</label><input type="text" name="insurance" value="{{ emp.insurance or '' }}"></div>
+    <div class="form-group"><label>N° Assurance</label><input type="text" name="insurance_number" value="{{ emp.insurance_number or '' }}"></div>
+    <div class="form-group"><label>Groupe sanguin</label><select name="blood_type">{% for b in ['','A+','A-','B+','B-','AB+','AB-','O+','O-'] %}<option {% if emp.blood_type==b %}selected{% endif %}>{{ b or '—' }}</option>{% endfor %}</select></div>
+</div>
+<div class="f2">
+    <div class="form-group"><label>Contact urgence</label><input type="text" name="emergency_contact" value="{{ emp.emergency_contact or '' }}"></div>
+    <div class="form-group"><label>Tél urgence</label><input type="text" name="emergency_tel" value="{{ emp.emergency_tel or '' }}"></div>
+</div>
+</div>
+
+<!-- BANQUE -->
+<div class="emp-section" id="tab-banque">
+<div class="f3">
+    <div class="form-group"><label>Numéro de compte</label><input type="text" name="bank_account" value="{{ emp.bank_account or '' }}"></div>
+    <div class="form-group"><label>Nom du compte</label><input type="text" name="bank_holder" value="{{ emp.bank_holder or '' }}"></div>
+    <div class="form-group"><label>Banque émettrice</label><input type="text" name="bank_name_emp" value="{{ emp.bank_name_emp or '' }}"></div>
+</div>
+<div class="f3">
+    <div class="form-group"><label>Code fiscal</label><input type="text" name="fiscal_code" value="{{ emp.fiscal_code or '' }}"></div>
+    <div class="form-group"><label>Téléphone</label><input type="text" name="tel" value="{{ emp.tel or '' }}"></div>
+    <div class="form-group"><label>Email</label><input type="email" name="email" value="{{ emp.email or '' }}"></div>
+</div>
+</div>
+
+<!-- CONTACT -->
+<div class="emp-section" id="tab-contact">
+<div class="f3">
+    <div class="form-group"><label>Facebook</label><input type="text" name="facebook" value="{{ emp.facebook or '' }}"></div>
+    <div class="form-group"><label>LinkedIn</label><input type="text" name="linkedin" value="{{ emp.linkedin or '' }}"></div>
+    <div class="form-group"><label>Skype</label><input type="text" name="skype" value="{{ emp.skype or '' }}"></div>
+</div>
+<div class="f2">
+    <div class="form-group"><label>Signature Email</label><textarea name="email_signature" rows="3" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:12px">{{ emp.email_signature or '' }}</textarea></div>
+    <div class="form-group"><label>Autres informations</label><textarea name="other_info" rows="3" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:12px">{{ emp.other_info or '' }}</textarea></div>
+</div>
+</div>
+
+<!-- PIÈCES -->
+<div class="emp-section" id="tab-pieces">
+<div class="form-group"><label>📎 Ajouter des documents</label>
+<input type="file" name="files" multiple style="padding:12px;border:2px dashed #ccc;border-radius:10px;width:100%"></div>
+</div>
+
+<div style="display:flex;gap:10px;margin-top:20px;padding-top:14px;border-top:1px solid #eee">
+    <a href="/rh/personnel" class="btn btn-outline">Annuler</a>
+    <button type="submit" class="btn btn-primary" style="flex:1">💾 Sauvegarder les modifications</button>
+</div>
 </form></div></div>
+
+<script>
+function showTab(tab) {
+    document.querySelectorAll('.emp-section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.emp-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    event.target.classList.add('active');
+}
+function previewPhoto(input) {
+    if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('photoPreview').innerHTML = '<img src="' + e.target.result + '" style="width:80px;height:80px;border-radius:50%;object-fit:cover">';
+        }; reader.readAsDataURL(input.files[0]);
+    }
+}
+</script>
 {% endblock %}
