@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% block title %}WannyGest - Planning Projets{% endblock %}{% block content %}
+<div class="page-header"><h1>📅 Planning & Calendrier</h1><a href="/resp-projet" class="btn btn-outline btn-sm">← Dashboard</a></div>
+
+<!-- Gantt-like view -->
+<div class="card"><div class="card-header"><h3>📊 Vue Gantt — Projets</h3></div><div class="card-body">
+{% if projects %}
+<div style="overflow-x:auto">
+{% for p in projects %}
+<div style="display:flex;align-items:center;margin-bottom:8px;font-size:12px">
+    <div style="min-width:180px;font-weight:600"><a href="/resp-projet/projet/{{ p.id }}" style="color:#1a3a5c">{{ p.name }}</a></div>
+    <div style="flex:1;position:relative;height:24px;background:#f0f0f0;border-radius:4px;overflow:hidden">
+        <div style="position:absolute;left:0;top:0;height:100%;width:{% if p.status=='termine' %}100{% elif p.status=='en_cours' %}50{% else %}10{% endif %}%;background:{% if p.status=='termine' %}#2e7d32{% elif p.status=='en_cours' %}#1565c0{% else %}#ccc{% endif %};border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700">
+            {{ p.start_date or '?' }} → {{ p.end_date or '?' }}
+        </div>
+    </div>
+    <div style="min-width:80px;text-align:right"><span class="badge-status {% if p.status=='termine' %}sent{% elif p.status=='en_cours' %}pending{% endif %}" style="font-size:9px">{{ p.status }}</span></div>
+</div>
+{% endfor %}
+</div>
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucun projet avec dates</p>{% endif %}
+</div></div>
+
+<!-- Tasks timeline -->
+<div class="card" style="margin-top:14px"><div class="card-header"><h3>📋 Échéances des tâches</h3></div><div class="card-body" style="padding:0">
+{% if tasks %}
+{% for t in tasks %}<div style="padding:8px 14px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:10px;font-size:12px">
+    <span style="min-width:80px;font-weight:600;color:{% if t.due_date < today %}#c53030{% else %}#1a3a5c{% endif %}">{{ t.due_date }}</span>
+    <span style="flex:1"><strong>{{ t.title }}</strong> <span style="color:#888;font-size:10px">· {{ t.project_name or '' }}</span></span>
+    <span class="badge-status {% if t.status=='termine' %}sent{% elif t.status=='en_cours' %}pending{% endif %}" style="font-size:9px">{{ t.status }}</span>
+</div>{% endfor %}
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucune tâche avec échéance</p>{% endif %}
+</div></div>
+{% endblock %}

@@ -101,6 +101,14 @@ from models import migrate_v13
 migrate_v13()
 from models import migrate_v14
 migrate_v14()
+from models import migrate_v15
+migrate_v15()
+from models import migrate_v16
+migrate_v16()
+from models import migrate_v15
+migrate_v15()
+from models import migrate_v16
+migrate_v16()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -114,7 +122,19 @@ ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 ALL_PERMISSIONS = ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general',
                    'envoyer', 'logs', 
                    'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit',
-                   'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis']
+                   'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis',
+                   'resp_projet', 'resp_projet_edit', 'centre_technique', 'centre_technique_edit', 'chat']
+
+# Permission categories for admin display
+PERM_CATEGORIES = {
+    'Comptabilité': [('comptabilite', 'Lecture'), ('comptabilite_edit', 'Modification'), ('convertir_devis', 'Convertir devis'), ('caisse_sortie', 'Caisse')],
+    'Commercial / CRM': [('clients', 'Clients lecture'), ('clients_edit', 'Clients modification'), ('proforma', 'Devis lecture'), ('proforma_edit', 'Devis modification'), ('visites', 'Visites lecture'), ('visites_edit', 'Visites modification')],
+    'Technique': [('centre_technique', 'Centre technique'), ('centre_technique_edit', 'Centre tech. modif'), ('traitement', 'Traitement/DPCI')],
+    'Projets': [('resp_projet', 'Resp. projet lecture'), ('resp_projet_edit', 'Resp. projet modif'), ('projets', 'Projets info')],
+    'RH & Admin': [('fichiers', 'Employés/RH'), ('contrats', 'Contrats'), ('envoyer', 'Envoi paie'), ('logs', 'Logs')],
+    'Général': [('dashboard', 'Dashboard'), ('dashboard_general', 'Dashboard général'), ('rapports_j', 'Rapports journaliers'), ('chat', 'Chat'), ('informatique', 'Informatique'), ('moyens_generaux', 'Stock lecture'), ('moyens_generaux_edit', 'Stock modification')],
+    'Administration': [('admin', 'Admin système')],
+}
 
 def allowed_file(fn):
     return '.' in fn and fn.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -769,7 +789,7 @@ def admin_page():
     stats = get_dashboard_stats()
     role_perms = {r: get_role_permissions(r) for r in ['admin', 'dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique']}
     return render_template('admin.html', page='admin', users=users, stats=stats,
-                          all_permissions=ALL_PERMISSIONS, role_perms=role_perms)
+                          all_permissions=ALL_PERMISSIONS, role_perms=role_perms, perm_categories=PERM_CATEGORIES)
 
 @app.route('/admin/add', methods=['POST'])
 @permission_required('admin')
@@ -1708,139 +1728,246 @@ def caisse_entree_add():
 @app.route('/comptabilite/bilan')
 @permission_required('comptabilite')
 def bilan_comptable():
+    tab = request.args.get('tab', 'mensuel')
     month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    exercice = request.args.get('exercice', datetime.now().strftime('%Y'))
     conn = _gdb()
     
-    # Factures (revenus)
-    factures_payees = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='payee' AND strftime('%%Y-%%m',paid_at)=?", (month,)).fetchone()[0]
-    factures_pending = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status IN ('envoyee','en_attente_paiement') AND strftime('%%Y-%%m',created_at)=?", (month,)).fetchone()[0]
+    if tab == 'plan':
+        comptes = [dict(r) for r in conn.execute("SELECT * FROM plan_comptable ORDER BY numero").fetchall()]
+        conn.close()
+        return render_template('bilan_comptable.html', page='bilan', tab=tab, comptes=comptes, exercice=exercice)
     
-    # Caisse entrées
-    caisse_entrees = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_entrees WHERE strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
+    if tab == 'ecritures':
+        ecritures = [dict(r) for r in conn.execute("""SELECT e.*, u.full_name FROM ecritures_comptables e 
+            LEFT JOIN users u ON e.created_by=u.id WHERE strftime('%Y',e.date)=? ORDER BY e.date DESC, e.id DESC""",
+            (exercice,)).fetchall()]
+        comptes = [dict(r) for r in conn.execute("SELECT numero, libelle FROM plan_comptable ORDER BY numero").fetchall()]
+        conn.close()
+        return render_template('bilan_comptable.html', page='bilan', tab=tab, ecritures=ecritures, comptes=comptes, exercice=exercice)
     
-    # Caisse sorties
-    caisse_sorties = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_sorties WHERE status='approuve' AND strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
+    if tab == 'bilan_officiel':
+        # Compute official bilan from écritures
+        rows = conn.execute("""SELECT pc.numero, pc.libelle, pc.type, pc.categorie, pc.classe,
+            COALESCE(SUM(CASE WHEN ec.compte_debit=pc.numero THEN ec.montant ELSE 0 END),0) as total_debit,
+            COALESCE(SUM(CASE WHEN ec.compte_credit=pc.numero THEN ec.montant ELSE 0 END),0) as total_credit
+            FROM plan_comptable pc
+            LEFT JOIN ecritures_comptables ec ON (ec.compte_debit=pc.numero OR ec.compte_credit=pc.numero) AND strftime('%Y',ec.date)=?
+            GROUP BY pc.numero ORDER BY pc.numero""", (exercice,)).fetchall()
+        
+        actif_immob, actif_circ, actif_treso = [], [], []
+        passif_cap, passif_dettes = [], []
+        charges, produits = [], []
+        
+        for r in rows:
+            d = dict(r)
+            solde = d['total_debit'] - d['total_credit']
+            d['solde'] = abs(solde)
+            if d['categorie'] in ('immobilise',) and d['classe'] == '2':
+                actif_immob.append(d)
+            elif d['categorie'] in ('circulant',) and d['classe'] in ('3','4'):
+                if d['type'] == 'actif': actif_circ.append(d)
+                else: passif_dettes.append(d)
+            elif d['categorie'] in ('tresorerie',):
+                actif_treso.append(d)
+            elif d['categorie'] in ('capitaux','dettes_financieres'):
+                passif_cap.append(d)
+            elif d['categorie'] in ('dettes_circulant',):
+                passif_dettes.append(d)
+            elif d['categorie'] == 'charges':
+                charges.append(d)
+            elif d['categorie'] == 'produits':
+                produits.append(d)
+        
+        t_actif = sum(c['solde'] for c in actif_immob + actif_circ + actif_treso if c['solde'] > 0)
+        t_passif = sum(c['solde'] for c in passif_cap + passif_dettes if c['solde'] > 0)
+        t_charges = sum(c['solde'] for c in charges)
+        t_produits = sum(c['solde'] for c in produits)
+        resultat = t_produits - t_charges
+        
+        bilans_hist = [dict(r) for r in conn.execute("SELECT * FROM bilans WHERE exercice=? ORDER BY created_at DESC", (exercice,)).fetchall()]
+        conn.close()
+        
+        bilan_data = {
+            'actif_immob': actif_immob, 'actif_circ': actif_circ, 'actif_treso': actif_treso,
+            'passif_cap': passif_cap, 'passif_dettes': passif_dettes,
+            'charges': charges, 'produits': produits,
+            't_actif': t_actif, 't_passif': t_passif + resultat,
+            't_charges': t_charges, 't_produits': t_produits, 'resultat': resultat,
+            'equilibre': abs(t_actif - (t_passif + resultat)) < 1,
+            'bilans_hist': bilans_hist
+        }
+        return render_template('bilan_comptable.html', page='bilan', tab=tab, bilan=bilan_data, exercice=exercice)
     
-    # Treasury movements
-    treso_recettes = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE movement_type='recette' AND strftime('%%Y-%%m',created_at)=?", (month,)).fetchone()[0]
-    treso_depenses = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE movement_type='depense' AND strftime('%%Y-%%m',created_at)=?", (month,)).fetchone()[0]
-    
-    # Dépenses
-    depenses = conn.execute("SELECT COALESCE(SUM(amount),0) FROM pieces_caisse WHERE strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
-    
-    # Bank balances
+    # Default: mensuel overview
+    fp = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='payee' AND strftime('%Y-%m',paid_at)=?", (month,)).fetchone()[0]
+    fpen = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status IN ('envoyee','en_attente_paiement') AND strftime('%Y-%m',created_at)=?", (month,)).fetchone()[0]
+    ce = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_entrees WHERE strftime('%Y-%m',date)=?", (month,)).fetchone()[0]
+    cs = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_sorties WHERE status='approuve' AND strftime('%Y-%m',date)=?", (month,)).fetchone()[0]
+    tr = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE movement_type='recette' AND strftime('%Y-%m',created_at)=?", (month,)).fetchone()[0]
+    td = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE movement_type='depense' AND strftime('%Y-%m',created_at)=?", (month,)).fetchone()[0]
+    dp = conn.execute("SELECT COALESCE(SUM(amount),0) FROM pieces_caisse WHERE strftime('%Y-%m',date)=?", (month,)).fetchone()[0]
     banks = [dict(r) for r in conn.execute("SELECT * FROM bank_accounts ORDER BY name").fetchall()]
-    
-    # Detail lists
-    inv_list = [dict(r) for r in conn.execute("SELECT * FROM invoices WHERE strftime('%%Y-%%m',created_at)=? ORDER BY created_at DESC", (month,)).fetchall()]
-    entree_list = [dict(r) for r in conn.execute("SELECT * FROM caisse_entrees WHERE strftime('%%Y-%%m',date)=? ORDER BY date DESC", (month,)).fetchall()]
-    sortie_list = [dict(r) for r in conn.execute("SELECT * FROM caisse_sorties WHERE status='approuve' AND strftime('%%Y-%%m',date)=? ORDER BY date DESC", (month,)).fetchall()]
-    dep_list = [dict(r) for r in conn.execute("SELECT * FROM pieces_caisse WHERE strftime('%%Y-%%m',date)=? ORDER BY date DESC", (month,)).fetchall()]
-    
-    total_entrees = factures_payees + caisse_entrees + treso_recettes
-    total_sorties = caisse_sorties + treso_depenses + depenses
-    solde = total_entrees - total_sorties
-    
+    inv_list = [dict(r) for r in conn.execute("SELECT * FROM invoices WHERE strftime('%Y-%m',created_at)=? ORDER BY created_at DESC", (month,)).fetchall()]
     conn.close()
     
-    data = {
-        'month': month, 'factures_payees': factures_payees, 'factures_pending': factures_pending,
-        'caisse_entrees': caisse_entrees, 'caisse_sorties': caisse_sorties,
-        'treso_recettes': treso_recettes, 'treso_depenses': treso_depenses, 'depenses': depenses,
-        'total_entrees': total_entrees, 'total_sorties': total_sorties, 'solde': solde,
-        'banks': banks, 'inv_list': inv_list, 'entree_list': entree_list,
-        'sortie_list': sortie_list, 'dep_list': dep_list
-    }
-    return render_template('bilan_comptable.html', page='bilan', data=data)
+    te = fp + ce + tr; ts = cs + td + dp
+    data = {'month': month, 'factures_payees': fp, 'factures_pending': fpen,
+            'caisse_entrees': ce, 'caisse_sorties': cs, 'treso_recettes': tr, 'treso_depenses': td,
+            'depenses': dp, 'total_entrees': te, 'total_sorties': ts, 'solde': te - ts,
+            'banks': banks, 'inv_list': inv_list}
+    return render_template('bilan_comptable.html', page='bilan', tab=tab, data=data, exercice=exercice)
+
+@app.route('/comptabilite/ecritures/add', methods=['POST'])
+@permission_required('comptabilite_edit')
+def ecriture_add():
+    conn = _gdb()
+    conn.execute("""INSERT INTO ecritures_comptables (date, journal, piece, compte_debit, compte_credit, libelle, montant, created_by)
+        VALUES (?,?,?,?,?,?,?,?)""",
+        (request.form.get('date',''), request.form.get('journal','OD'), request.form.get('piece',''),
+         request.form.get('compte_debit',''), request.form.get('compte_credit',''),
+         request.form.get('libelle',''), float(request.form.get('montant',0) or 0), session['user_id']))
+    conn.commit(); conn.close()
+    flash("Écriture enregistrée","success")
+    year = request.form.get('date','')[:4] or datetime.now().strftime('%Y')
+    return redirect(f'/comptabilite/bilan?tab=ecritures&exercice={year}')
+
+@app.route('/comptabilite/plan-comptable/add', methods=['POST'])
+@permission_required('comptabilite_edit')
+def plan_comptable_add():
+    conn = _gdb()
+    try:
+        conn.execute("INSERT INTO plan_comptable (numero, libelle, type, categorie, classe) VALUES (?,?,?,?,?)",
+            (request.form.get('numero',''), request.form.get('libelle',''), request.form.get('type','actif'),
+             request.form.get('categorie',''), request.form.get('classe','')))
+        conn.commit(); flash("Compte ajouté","success")
+    except: flash("Ce numéro de compte existe déjà","error")
+    conn.close()
+    return redirect('/comptabilite/bilan?tab=plan')
+
+@app.route('/comptabilite/bilan/generer', methods=['POST'])
+@permission_required('comptabilite_edit')
+def bilan_generer():
+    exercice = request.form.get('exercice', datetime.now().strftime('%Y'))
+    conn = _gdb()
+    rows = conn.execute("""SELECT pc.type, pc.categorie,
+        COALESCE(SUM(CASE WHEN ec.compte_debit=pc.numero THEN ec.montant ELSE 0 END),0) as td,
+        COALESCE(SUM(CASE WHEN ec.compte_credit=pc.numero THEN ec.montant ELSE 0 END),0) as tc
+        FROM plan_comptable pc
+        LEFT JOIN ecritures_comptables ec ON (ec.compte_debit=pc.numero OR ec.compte_credit=pc.numero) AND strftime('%Y',ec.date)=?
+        WHERE pc.categorie NOT IN ('charges','produits')
+        GROUP BY pc.numero""", (exercice,)).fetchall()
+    
+    t_actif = sum(r['td'] - r['tc'] for r in rows if r['type'] == 'actif')
+    t_passif = sum(r['tc'] - r['td'] for r in rows if r['type'] == 'passif')
+    
+    # Résultat
+    ch = conn.execute("""SELECT COALESCE(SUM(CASE WHEN ec.compte_debit=pc.numero THEN ec.montant ELSE 0 END),0)
+        FROM plan_comptable pc LEFT JOIN ecritures_comptables ec ON ec.compte_debit=pc.numero AND strftime('%Y',ec.date)=?
+        WHERE pc.categorie='charges'""", (exercice,)).fetchone()[0]
+    pr = conn.execute("""SELECT COALESCE(SUM(CASE WHEN ec.compte_credit=pc.numero THEN ec.montant ELSE 0 END),0)
+        FROM plan_comptable pc LEFT JOIN ecritures_comptables ec ON ec.compte_credit=pc.numero AND strftime('%Y',ec.date)=?
+        WHERE pc.categorie='produits'""", (exercice,)).fetchone()[0]
+    resultat = pr - ch
+    
+    bilan_data = {'actif': t_actif, 'passif': t_passif, 'resultat': resultat, 'charges': ch, 'produits': pr}
+    conn.execute("""INSERT INTO bilans (exercice, date_cloture, total_actif, total_passif, resultat, data_json, status, created_by)
+        VALUES (?,?,?,?,?,?,?,?)""",
+        (exercice, datetime.now().strftime('%Y-12-31'), t_actif, t_passif + resultat, resultat,
+         json.dumps(bilan_data), 'brouillon', session['user_id']))
+    conn.commit(); conn.close()
+    flash(f"Bilan exercice {exercice} généré","success")
+    return redirect(f'/comptabilite/bilan?tab=bilan_officiel&exercice={exercice}')
 
 @app.route('/comptabilite/bilan/pdf')
 @permission_required('comptabilite')
 def bilan_pdf():
-    month = request.args.get('month', datetime.now().strftime('%Y-%m'))
-    conn = _gdb()
-    fp = conn.execute("SELECT COALESCE(SUM(amount),0) FROM invoices WHERE status='payee' AND strftime('%%Y-%%m',paid_at)=?", (month,)).fetchone()[0]
-    ce = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_entrees WHERE strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
-    tr = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE movement_type='recette' AND strftime('%%Y-%%m',created_at)=?", (month,)).fetchone()[0]
-    cs = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_sorties WHERE status='approuve' AND strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
-    td = conn.execute("SELECT COALESCE(SUM(amount),0) FROM treasury WHERE movement_type='depense' AND strftime('%%Y-%%m',created_at)=?", (month,)).fetchone()[0]
-    dp = conn.execute("SELECT COALESCE(SUM(amount),0) FROM pieces_caisse WHERE strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
-    banks = [dict(r) for r in conn.execute("SELECT * FROM bank_accounts").fetchall()]
-    conn.close()
-    
-    te = fp + ce + tr; ts = cs + td + dp; solde = te - ts
+    exercice = request.args.get('exercice', datetime.now().strftime('%Y'))
+    month = request.args.get('month', '')
+    tab = request.args.get('tab', 'mensuel')
     
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.lib.colors import HexColor, white
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
     
-    output = os.path.join(app.config['UPLOAD_FOLDER'], f'bilan_{month}.pdf')
+    output = os.path.join(app.config['UPLOAD_FOLDER'], f'bilan_{exercice}.pdf')
     os.makedirs(os.path.dirname(output), exist_ok=True)
-    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=12*mm, bottomMargin=12*mm)
+    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=10*mm, bottomMargin=10*mm)
     
     BG = HexColor('#44546A'); BL = HexColor('#4472C4'); GR = HexColor('#2e7d32'); RD = HexColor('#c53030')
-    hw = ParagraphStyle('hw', fontName='Helvetica-Bold', fontSize=9, textColor=white, alignment=TA_CENTER)
-    tc = ParagraphStyle('tc', fontSize=9, alignment=TA_CENTER)
-    tr_s = ParagraphStyle('tr', fontSize=9, alignment=TA_RIGHT)
+    hw = ParagraphStyle('hw', fontName='Helvetica-Bold', fontSize=8, textColor=white, alignment=TA_CENTER)
+    tc = ParagraphStyle('tc', fontSize=8, alignment=TA_CENTER)
+    tl = ParagraphStyle('tl', fontSize=8)
+    tr_s = ParagraphStyle('tr', fontSize=8, alignment=TA_RIGHT)
     tb = ParagraphStyle('tb', fontName='Helvetica-Bold', fontSize=9, alignment=TA_RIGHT)
-    
-    story = [Paragraph(f"<b>BILAN COMPTABLE — {month}</b>", ParagraphStyle('t', fontName='Helvetica-Bold', fontSize=16, textColor=BG, alignment=TA_CENTER, spaceAfter=8*mm))]
-    
-    pw = 180*mm
+    pw = 186*mm
     fmt = lambda x: f"{x:,.0f}"
     
-    # Entrées
-    story.append(Paragraph("<b>ENTREES</b>", ParagraphStyle('h', fontName='Helvetica-Bold', fontSize=11, textColor=GR, spaceAfter=3*mm)))
-    ed = [[Paragraph(h, hw) for h in ['Source', 'Montant (FCFA)']]]
-    for label, val in [('Factures payées', fp), ('Entrées de caisse', ce), ('Recettes banque', tr)]:
-        ed.append([Paragraph(label, tc), Paragraph(fmt(val), tr_s)])
-    ed.append([Paragraph('<b>TOTAL ENTREES</b>', ParagraphStyle('x', fontName='Helvetica-Bold', fontSize=9, textColor=GR)),
-               Paragraph(f'<b>{fmt(te)}</b>', ParagraphStyle('y', fontName='Helvetica-Bold', fontSize=10, textColor=GR, alignment=TA_RIGHT))])
-    et = Table(ed, colWidths=[pw*0.6, pw*0.4])
-    et.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),BL),('BOX',(0,0),(-1,-1),0.5,HexColor('#8EAADB')),
-        ('INNERGRID',(0,0),(-1,-1),0.3,HexColor('#B4C6E7')),('BACKGROUND',(0,-1),(-1,-1),HexColor('#E2EFDA')),
-        ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]))
-    story.extend([et, Spacer(1, 6*mm)])
+    conn = _gdb()
+    story = []
     
-    # Sorties
-    story.append(Paragraph("<b>SORTIES</b>", ParagraphStyle('h2', fontName='Helvetica-Bold', fontSize=11, textColor=RD, spaceAfter=3*mm)))
-    sd = [[Paragraph(h, hw) for h in ['Source', 'Montant (FCFA)']]]
-    for label, val in [('Sorties de caisse', cs), ('Dépenses banque', td), ('Pièces de caisse', dp)]:
-        sd.append([Paragraph(label, tc), Paragraph(fmt(val), tr_s)])
-    sd.append([Paragraph('<b>TOTAL SORTIES</b>', ParagraphStyle('x2', fontName='Helvetica-Bold', fontSize=9, textColor=RD)),
-               Paragraph(f'<b>{fmt(ts)}</b>', ParagraphStyle('y2', fontName='Helvetica-Bold', fontSize=10, textColor=RD, alignment=TA_RIGHT))])
-    st = Table(sd, colWidths=[pw*0.6, pw*0.4])
-    st.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),BL),('BOX',(0,0),(-1,-1),0.5,HexColor('#8EAADB')),
-        ('INNERGRID',(0,0),(-1,-1),0.3,HexColor('#B4C6E7')),('BACKGROUND',(0,-1),(-1,-1),HexColor('#FDE8E8')),
-        ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]))
-    story.extend([st, Spacer(1, 6*mm)])
+    story.append(Paragraph("RAMYA TECHNOLOGIE &amp; INNOVATION", ParagraphStyle('co', fontSize=9, textColor=HexColor('#999'), alignment=TA_CENTER, spaceAfter=3*mm)))
+    story.append(Paragraph(f"<b>BILAN COMPTABLE — Exercice {exercice}</b>", ParagraphStyle('t', fontName='Helvetica-Bold', fontSize=16, textColor=BG, alignment=TA_CENTER, spaceAfter=2*mm)))
+    story.append(Paragraph(f"Document conforme au SYSCOHADA révisé — Généré le {datetime.now().strftime('%d/%m/%Y')}", ParagraphStyle('sub', fontSize=7, textColor=HexColor('#999'), alignment=TA_CENTER, spaceAfter=6*mm)))
     
-    # Solde
-    color = GR if solde >= 0 else RD
-    sol = Table([[Paragraph('<b>SOLDE DU MOIS</b>', ParagraphStyle('s1', fontName='Helvetica-Bold', fontSize=11, textColor=white)),
-                  Paragraph(f'<b>{fmt(solde)} FCFA</b>', ParagraphStyle('s2', fontName='Helvetica-Bold', fontSize=14, textColor=white, alignment=TA_RIGHT))]], colWidths=[pw*0.6, pw*0.4])
-    sol.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),color),('TOPPADDING',(0,0),(-1,-1),8),('BOTTOMPADDING',(0,0),(-1,-1),8),
-        ('LEFTPADDING',(0,0),(-1,-1),10),('RIGHTPADDING',(0,0),(-1,-1),10)]))
-    story.extend([sol, Spacer(1, 6*mm)])
+    # Get bilan data
+    rows = conn.execute("""SELECT pc.numero, pc.libelle, pc.type, pc.categorie, pc.classe,
+        COALESCE(SUM(CASE WHEN ec.compte_debit=pc.numero THEN ec.montant ELSE 0 END),0) as total_debit,
+        COALESCE(SUM(CASE WHEN ec.compte_credit=pc.numero THEN ec.montant ELSE 0 END),0) as total_credit
+        FROM plan_comptable pc
+        LEFT JOIN ecritures_comptables ec ON (ec.compte_debit=pc.numero OR ec.compte_credit=pc.numero) AND strftime('%Y',ec.date)=?
+        GROUP BY pc.numero ORDER BY pc.numero""", (exercice,)).fetchall()
+    conn.close()
     
-    # Banks
-    if banks:
-        story.append(Paragraph("<b>SOLDES BANCAIRES</b>", ParagraphStyle('h3', fontName='Helvetica-Bold', fontSize=11, textColor=BG, spaceAfter=3*mm)))
-        bd = [[Paragraph(h, hw) for h in ['Compte', 'Type', 'Solde actuel']]]
-        for b in banks:
-            bd.append([Paragraph(b['name'], tc), Paragraph(f"{b['type']} ({b.get('subtype','courant')})", tc),
-                       Paragraph(fmt(b['current_balance']), tb)])
-        bt = Table(bd, colWidths=[pw*0.4, pw*0.3, pw*0.3])
-        bt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),BG),('BOX',(0,0),(-1,-1),0.5,HexColor('#8EAADB')),
-            ('INNERGRID',(0,0),(-1,-1),0.3,HexColor('#B4C6E7')),('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4)]))
-        story.append(bt)
+    actif_rows = [(dict(r)['numero'], dict(r)['libelle'], abs(dict(r)['total_debit'] - dict(r)['total_credit'])) 
+                  for r in rows if dict(r)['type'] == 'actif' and dict(r)['categorie'] not in ('charges','produits')]
+    passif_rows = [(dict(r)['numero'], dict(r)['libelle'], abs(dict(r)['total_credit'] - dict(r)['total_debit']))
+                   for r in rows if dict(r)['type'] == 'passif' and dict(r)['categorie'] not in ('charges','produits')]
     
-    story.append(Spacer(1, 8*mm))
-    story.append(Paragraph(f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}", ParagraphStyle('ft', fontSize=8, textColor=HexColor('#999'))))
+    t_actif = sum(r[2] for r in actif_rows)
+    t_passif = sum(r[2] for r in passif_rows)
+    
+    # ACTIF table
+    story.append(Paragraph("<b>ACTIF</b>", ParagraphStyle('ha', fontName='Helvetica-Bold', fontSize=11, textColor=BL, spaceAfter=2*mm)))
+    ad = [[Paragraph(h, hw) for h in ['N° Compte', 'Libellé', 'Montant (FCFA)']]]
+    for num, lib, val in actif_rows:
+        if val > 0: ad.append([Paragraph(num, tc), Paragraph(lib, tl), Paragraph(fmt(val), tr_s)])
+    ad.append([Paragraph('', tc), Paragraph('<b>TOTAL ACTIF</b>', ParagraphStyle('ta', fontName='Helvetica-Bold', fontSize=9)),
+               Paragraph(f'<b>{fmt(t_actif)}</b>', tb)])
+    at = Table(ad, colWidths=[20*mm, pw-50*mm, 30*mm])
+    at.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),BL),('BOX',(0,0),(-1,-1),0.5,HexColor('#8EAADB')),
+        ('INNERGRID',(0,0),(-1,-1),0.3,HexColor('#D6E4F0')),('BACKGROUND',(0,-1),(-1,-1),HexColor('#E2EFDA')),
+        ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3)]))
+    story.extend([at, Spacer(1, 5*mm)])
+    
+    # PASSIF table
+    story.append(Paragraph("<b>PASSIF</b>", ParagraphStyle('hp', fontName='Helvetica-Bold', fontSize=11, textColor=RD, spaceAfter=2*mm)))
+    pd = [[Paragraph(h, hw) for h in ['N° Compte', 'Libellé', 'Montant (FCFA)']]]
+    for num, lib, val in passif_rows:
+        if val > 0: pd.append([Paragraph(num, tc), Paragraph(lib, tl), Paragraph(fmt(val), tr_s)])
+    pd.append([Paragraph('', tc), Paragraph('<b>TOTAL PASSIF</b>', ParagraphStyle('tp', fontName='Helvetica-Bold', fontSize=9)),
+               Paragraph(f'<b>{fmt(t_passif)}</b>', tb)])
+    pt = Table(pd, colWidths=[20*mm, pw-50*mm, 30*mm])
+    pt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),RD),('BOX',(0,0),(-1,-1),0.5,HexColor('#EF9A9A')),
+        ('INNERGRID',(0,0),(-1,-1),0.3,HexColor('#FFCDD2')),('BACKGROUND',(0,-1),(-1,-1),HexColor('#FDE8E8')),
+        ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3)]))
+    story.extend([pt, Spacer(1, 5*mm)])
+    
+    # Equilibre
+    equil = "EQUILIBRE ✓" if abs(t_actif - t_passif) < 1 else f"ECART: {fmt(abs(t_actif - t_passif))}"
+    story.append(Paragraph(f"<b>{equil}</b> — Total Actif: {fmt(t_actif)} F | Total Passif: {fmt(t_passif)} F",
+        ParagraphStyle('eq', fontName='Helvetica-Bold', fontSize=10, textColor=BG, alignment=TA_CENTER, spaceAfter=6*mm)))
+    
+    story.append(Paragraph("Signature du Comptable : ___________________          Signature DG : ___________________",
+        ParagraphStyle('sig', fontSize=8, textColor=HexColor('#999'), spaceAfter=4*mm)))
+    story.append(Paragraph("Ce bilan est établi conformément au Plan Comptable SYSCOHADA révisé applicable en Côte d'Ivoire.",
+        ParagraphStyle('legal', fontSize=7, textColor=HexColor('#bbb'), alignment=TA_CENTER)))
+    
     doc.build(story)
-    return send_file(output, as_attachment=True, download_name=f"Bilan_{month}.pdf")
+    return send_file(output, as_attachment=True, download_name=f"Bilan_SYSCOHADA_{exercice}.pdf")
 
 # ======================== RAPPORT DE CAISSE HEBDOMADAIRE ========================
 
@@ -2950,6 +3077,139 @@ def prospect_item_delete(pid, table, item_id):
         flash("Supprimé","success")
     return redirect(f'/prospects/view/{pid}')
 
+# ======================== RESPONSABLE PROJET ========================
+
+@app.route('/resp-projet')
+@permission_required('resp_projet')
+def resp_projet_dashboard():
+    conn = _gdb()
+    projects = [dict(r) for r in conn.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()]
+    tasks = [dict(r) for r in conn.execute("SELECT * FROM tasks ORDER BY created_at DESC").fetchall()]
+    
+    # KPIs
+    total_p = len(projects)
+    en_cours = len([p for p in projects if p['status'] == 'en_cours'])
+    termines = len([p for p in projects if p['status'] == 'termine'])
+    en_retard = len([p for p in projects if p.get('end_date') and p['end_date'] < datetime.now().strftime('%Y-%m-%d') and p['status'] != 'termine'])
+    
+    tasks_total = len(tasks)
+    tasks_done = len([t for t in tasks if t['status'] == 'termine'])
+    tasks_pending = len([t for t in tasks if t['status'] == 'a_faire'])
+    tasks_progress = len([t for t in tasks if t['status'] == 'en_cours'])
+    
+    budget_total = sum(float(p.get('budget',0) or 0) for p in projects)
+    budget_consumed = sum(float(p.get('budget_consumed',0) or 0) for p in projects)
+    
+    # Recent tasks
+    recent = [dict(r) for r in conn.execute("""SELECT t.*, p.name as project_name, u.full_name as assignee 
+        FROM tasks t LEFT JOIN projects p ON t.project_id=p.id LEFT JOIN users u ON t.assigned_to=u.id
+        ORDER BY t.created_at DESC LIMIT 10""").fetchall()]
+    
+    # Deadlines this week
+    from datetime import timedelta
+    today = datetime.now().date()
+    week_end = (today + timedelta(days=6)).strftime('%Y-%m-%d')
+    deadlines = [dict(r) for r in conn.execute("""SELECT t.*, p.name as project_name 
+        FROM tasks t LEFT JOIN projects p ON t.project_id=p.id 
+        WHERE t.due_date <= ? AND t.status != 'termine' ORDER BY t.due_date""",
+        (week_end,)).fetchall()]
+    
+    conn.close()
+    return render_template('resp_projet.html', page='resp_projet',
+        projects=projects, total_p=total_p, en_cours=en_cours, termines=termines, en_retard=en_retard,
+        tasks_total=tasks_total, tasks_done=tasks_done, tasks_pending=tasks_pending, tasks_progress=tasks_progress,
+        budget_total=budget_total, budget_consumed=budget_consumed,
+        recent=recent, deadlines=deadlines, today=datetime.now().strftime('%Y-%m-%d'))
+
+@app.route('/resp-projet/projets')
+@permission_required('resp_projet')
+def resp_projet_list():
+    conn = _gdb()
+    projects = [dict(r) for r in conn.execute("""SELECT p.*, u.full_name as manager_name,
+        (SELECT COUNT(*) FROM tasks WHERE project_id=p.id) as task_count,
+        (SELECT COUNT(*) FROM tasks WHERE project_id=p.id AND status='termine') as task_done
+        FROM projects p LEFT JOIN users u ON p.manager_id=u.id ORDER BY p.created_at DESC""").fetchall()]
+    users = get_all_users()
+    clients = get_all_clients()
+    conn.close()
+    return render_template('resp_projet_list.html', page='resp_projets', projects=projects, users=users, clients=clients)
+
+@app.route('/resp-projet/projet/add', methods=['POST'])
+@permission_required('resp_projet')
+def resp_projet_add():
+    from models import db_insert
+    db_insert('projects', name=request.form.get('name',''), description=request.form.get('description',''),
+        objectives=request.form.get('objectives',''), client=request.form.get('client',''),
+        status=request.form.get('status','non_commence'), priority=request.form.get('priority','moyenne'),
+        start_date=request.form.get('start_date',''), end_date=request.form.get('end_date',''),
+        budget=float(request.form.get('budget',0) or 0),
+        manager_id=int(request.form.get('manager_id',0) or 0) or None,
+        client_id=int(request.form.get('client_id',0) or 0) or None,
+        created_by=session['user_id'])
+    flash("Projet créé","success"); return redirect('/resp-projet/projets')
+
+@app.route('/resp-projet/projet/<int:pid>')
+@permission_required('resp_projet')
+def resp_projet_view(pid):
+    from models import db_get_by_id
+    project = db_get_by_id('projects', pid)
+    if not project: flash("Non trouvé","error"); return redirect('/resp-projet/projets')
+    conn = _gdb()
+    tasks = [dict(r) for r in conn.execute("""SELECT t.*, u.full_name as assignee FROM tasks t 
+        LEFT JOIN users u ON t.assigned_to=u.id WHERE t.project_id=? ORDER BY t.priority DESC, t.due_date""",
+        (pid,)).fetchall()]
+    comments = [dict(r) for r in conn.execute("""SELECT tc.*, u.full_name FROM task_comments tc
+        LEFT JOIN users u ON tc.user_id=u.id WHERE tc.task_id IN (SELECT id FROM tasks WHERE project_id=?)
+        ORDER BY tc.created_at DESC LIMIT 20""", (pid,)).fetchall()]
+    users = get_all_users()
+    conn.close()
+    
+    done = len([t for t in tasks if t['status'] == 'termine'])
+    progress = round(done / max(len(tasks), 1) * 100)
+    
+    return render_template('resp_projet_view.html', page='resp_projets', project=project,
+        tasks=tasks, comments=comments, users=users, progress=progress, today=datetime.now().strftime('%Y-%m-%d'))
+
+@app.route('/resp-projet/projet/<int:pid>/task/add', methods=['POST'])
+@permission_required('resp_projet')
+def resp_projet_task_add(pid):
+    from models import db_insert
+    db_insert('tasks', project_id=pid, title=request.form.get('title',''),
+        description=request.form.get('description',''), priority=request.form.get('priority','moyenne'),
+        status='a_faire', due_date=request.form.get('due_date',''),
+        assigned_to=int(request.form.get('assigned_to',0) or 0) or None,
+        created_by=session['user_id'])
+    flash("Tâche ajoutée","success"); return redirect(f'/resp-projet/projet/{pid}')
+
+@app.route('/resp-projet/task/<int:tid>/status/<status>')
+@permission_required('resp_projet')
+def resp_projet_task_status(tid, status):
+    from models import db_get_by_id as _gbi, db_update
+    if status in ('a_faire','en_cours','termine'):
+        db_update('tasks', tid, status=status)
+        flash("Statut mis à jour","success")
+    t = _gbi('tasks', tid)
+    return redirect(f'/resp-projet/projet/{t["project_id"]}' if t else '/resp-projet')
+
+@app.route('/resp-projet/task/<int:tid>/comment', methods=['POST'])
+@permission_required('resp_projet')
+def resp_projet_comment(tid):
+    from models import db_insert, db_get_by_id as _gbi2
+    db_insert('task_comments', task_id=tid, user_id=session['user_id'], content=request.form.get('content',''))
+    t = _gbi2('tasks', tid)
+    flash("Commentaire ajouté","success")
+    return redirect(f'/resp-projet/projet/{t["project_id"]}' if t else '/resp-projet')
+
+@app.route('/resp-projet/planning')
+@permission_required('resp_projet')
+def resp_projet_planning():
+    conn = _gdb()
+    projects = [dict(r) for r in conn.execute("SELECT * FROM projects WHERE start_date != '' ORDER BY start_date").fetchall()]
+    tasks = [dict(r) for r in conn.execute("""SELECT t.*, p.name as project_name FROM tasks t 
+        LEFT JOIN projects p ON t.project_id=p.id WHERE t.due_date != '' ORDER BY t.due_date""").fetchall()]
+    conn.close()
+    return render_template('resp_projet_planning.html', page='resp_planning', projects=projects, tasks=tasks, today=datetime.now().strftime('%Y-%m-%d'))
+
 # ======================== CONTRATS RH ========================
 
 @app.route('/rh/contrats-rh')
@@ -3481,8 +3741,8 @@ def caisse_sortie():
     sorties = get_caisse_sorties(month=month)
     stats = get_caisse_stats(month=month)
     conn = _gdb()
-    entrees = [dict(r) for r in conn.execute("SELECT * FROM caisse_entrees WHERE strftime('%%Y-%%m',date)=? ORDER BY date DESC", (month,)).fetchall()]
-    total_entrees = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_entrees WHERE strftime('%%Y-%%m',date)=?", (month,)).fetchone()[0]
+    entrees = [dict(r) for r in conn.execute("SELECT * FROM caisse_entrees WHERE strftime('%Y-%m',date)=? ORDER BY date DESC", (month,)).fetchall()]
+    total_entrees = conn.execute("SELECT COALESCE(SUM(montant),0) FROM caisse_entrees WHERE strftime('%Y-%m',date)=?", (month,)).fetchone()[0]
     conn.close()
     return render_template('caisse_sortie.html', page='caisse_sortie', sorties=sorties, stats=stats, month=month,
         tab=tab, entrees=entrees, total_entrees=total_entrees)
@@ -4002,17 +4262,27 @@ def rapports_assiduite():
     total_users = len([r for r in ranking if r['nb_rapports'] > 0])
     assidus = len([r for r in ranking if r['taux'] >= 100])
     
-    # Best employee
+    # Best employee overall
     best = ranking[0] if ranking and ranking[0]['nb_rapports'] > 0 else None
+    
+    # Split ranking by category
+    tech_roles = ['technicien', 'tech_reseau', 'tech_maintenance', 'installateur', 'stagiaire']
+    ranking_tech = sorted([r for r in ranking if r.get('role','') in tech_roles], key=lambda x: -x['nb_rapports'])
+    ranking_admin = sorted([r for r in ranking if r.get('role','') not in tech_roles], key=lambda x: -x['nb_rapports'])
+    
+    best_tech = ranking_tech[0] if ranking_tech and ranking_tech[0]['nb_rapports'] > 0 else None
+    best_admin = ranking_admin[0] if ranking_admin and ranking_admin[0]['nb_rapports'] > 0 else None
     
     # All stored champions for attestation download
     champions_list = [dict(r) for r in conn.execute("SELECT * FROM weekly_champion ORDER BY week_end DESC LIMIT 10").fetchall()]
     
     conn.close()
     return render_template('rapports_assiduite.html', page='rapports_j',
-        ranking=ranking, period=period, p_label=p_label, expected_days=expected_days,
+        ranking=ranking, ranking_tech=ranking_tech, ranking_admin=ranking_admin,
+        period=period, p_label=p_label, expected_days=expected_days,
         total_reports=total_reports, total_users=total_users, assidus=assidus,
-        best=best, user=u, today=today.strftime('%Y-%m-%d'), champions_list=champions_list)
+        best=best, best_tech=best_tech, best_admin=best_admin,
+        user=u, today=today.strftime('%Y-%m-%d'), champions_list=champions_list)
 
 @app.route('/rapports-journaliers/attestation/<int:champ_id>')
 @permission_required('rapports_j')

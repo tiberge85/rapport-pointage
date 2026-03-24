@@ -1,0 +1,62 @@
+{% extends "base.html" %}{% block title %}WannyGest - {{ project.name }}{% endblock %}{% block content %}
+<div class="page-header"><h1>📁 {{ project.name }}</h1>
+<div style="display:flex;gap:6px"><span class="badge-status {% if project.status=='termine' %}sent{% elif project.status=='en_cours' %}pending{% endif %}">{{ project.status }}</span>
+<a href="/resp-projet/projets" class="btn btn-outline btn-sm">← Projets</a></div></div>
+
+<!-- KPIs -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px">
+    <div style="padding:12px;background:#f8faf9;border-radius:8px;text-align:center"><div style="font-size:10px;color:#888">Avancement</div><div style="font-size:22px;font-weight:800;color:#1a7a6d">{{ progress }}%</div></div>
+    <div style="padding:12px;background:#f8faf9;border-radius:8px;text-align:center"><div style="font-size:10px;color:#888">Tâches</div><div style="font-size:22px;font-weight:800">{{ tasks|length }}</div></div>
+    <div style="padding:12px;background:#f8faf9;border-radius:8px;text-align:center"><div style="font-size:10px;color:#888">Budget</div><div style="font-size:16px;font-weight:700">{{ '{:,.0f}'.format(project.budget or 0) }} F</div></div>
+    <div style="padding:12px;background:#f8faf9;border-radius:8px;text-align:center"><div style="font-size:10px;color:#888">Échéance</div><div style="font-size:14px;font-weight:700;color:{% if project.end_date and project.end_date < today %}#c53030{% else %}#1a3a5c{% endif %}">{{ project.end_date or '-' }}</div></div>
+</div>
+
+{% if project.objectives %}<div style="background:#e3f2fd;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px"><strong>🎯 Objectifs :</strong> {{ project.objectives }}</div>{% endif %}
+
+<!-- Add task -->
+<div class="card" style="margin-bottom:14px"><div class="card-header"><h3>✅ Tâches</h3></div><div class="card-body">
+<form method="post" action="/resp-projet/projet/{{ project.id }}/task/add" style="background:#f8faf9;padding:10px;border-radius:8px;margin-bottom:12px">
+    <div class="form-row"><div class="form-group"><label>Titre *</label><input type="text" name="title" required></div><div class="form-group"><label>Échéance</label><input type="date" name="due_date"></div></div>
+    <div class="form-row"><div class="form-group"><label>Priorité</label><select name="priority"><option value="basse">Basse</option><option value="moyenne" selected>Moyenne</option><option value="haute">Haute</option><option value="urgente">Urgente</option></select></div>
+    <div class="form-group"><label>Assigner à</label><select name="assigned_to"><option value="">—</option>{% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></div></div>
+    <div class="form-group"><label>Description</label><input type="text" name="description" placeholder="Détails..."></div>
+    <button type="submit" class="btn btn-primary btn-sm">+ Ajouter</button>
+</form>
+
+{% if tasks %}
+{% for t in tasks %}<div style="border:1px solid {% if t.status=='termine' %}#a5d6a7{% else %}#eee{% endif %};border-radius:10px;padding:12px;margin-bottom:8px;{% if t.status=='termine' %}opacity:0.7{% endif %}">
+    <div style="display:flex;justify-content:space-between;align-items:start">
+        <div><strong>{{ t.title }}</strong>
+            {% if t.priority=='urgente' %}<span style="color:#c53030;font-size:10px;font-weight:700">🔴 URGENTE</span>{% elif t.priority=='haute' %}<span style="color:#e8672a;font-size:10px">🟠 Haute</span>{% endif %}
+            {% if t.assignee %}<span style="font-size:10px;color:#888;margin-left:6px">→ {{ t.assignee }}</span>{% endif %}
+        </div>
+        <div style="display:flex;gap:4px">
+            {% if t.status != 'termine' %}<a href="/resp-projet/task/{{ t.id }}/status/en_cours" class="btn btn-sm btn-outline" style="font-size:9px;padding:2px 6px">▶ En cours</a>
+            <a href="/resp-projet/task/{{ t.id }}/status/termine" class="btn btn-sm" style="font-size:9px;padding:2px 6px;background:#2e7d32;color:#fff">✅ Fait</a>{% else %}
+            <a href="/resp-projet/task/{{ t.id }}/status/a_faire" class="btn btn-sm btn-outline" style="font-size:9px;padding:2px 6px">↩️ Rouvrir</a>{% endif %}
+        </div>
+    </div>
+    {% if t.description %}<div style="font-size:11px;color:#666;margin-top:4px">{{ t.description }}</div>{% endif %}
+    <div style="display:flex;gap:10px;margin-top:6px;font-size:10px;color:#888">
+        <span class="badge-status {% if t.status=='termine' %}sent{% elif t.status=='en_cours' %}pending{% endif %}" style="font-size:9px">{{ t.status }}</span>
+        {% if t.due_date %}<span>📅 {{ t.due_date }}</span>{% endif %}
+    </div>
+    <!-- Comment form -->
+    <form method="post" action="/resp-projet/task/{{ t.id }}/comment" style="display:flex;gap:4px;margin-top:6px">
+        <input type="text" name="content" placeholder="💬 Commenter..." style="flex:1;font-size:11px;padding:4px 8px;border:1px solid #ddd;border-radius:6px">
+        <button type="submit" class="btn btn-sm btn-outline" style="font-size:10px;padding:2px 8px">Envoyer</button>
+    </form>
+</div>{% endfor %}
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucune tâche</p>{% endif %}
+</div></div>
+
+<!-- Comments feed -->
+{% if comments %}
+<div class="card"><div class="card-header"><h3>💬 Commentaires récents</h3></div><div class="card-body" style="padding:0">
+{% for cm in comments %}
+<div style="padding:8px 14px;border-bottom:1px solid #f0f0f0;font-size:12px">
+    <strong>{{ cm.full_name }}</strong> <span style="color:#888;font-size:10px">{{ cm.created_at[:16] if cm.created_at else '' }}</span>
+    <div style="margin-top:2px">{{ cm.content }}</div>
+</div>{% endfor %}
+</div></div>{% endif %}
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% block title %}WannyGest - Projets{% endblock %}{% block content %}
+<div class="page-header"><h1>📁 Gestion des projets</h1>
+<button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Nouveau projet</button></div>
+
+{% if projects %}<div class="card"><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<thead><tr><th>Projet</th><th>Responsable</th><th>Priorité</th><th>Début</th><th>Fin</th><th>Budget</th><th>Tâches</th><th>Avancement</th><th>Statut</th><th></th></tr></thead>
+<tbody>{% for p in projects %}
+{% set pct = (p.task_done / (p.task_count or 1) * 100)|int %}<tr>
+<td><a href="/resp-projet/projet/{{ p.id }}" style="font-weight:700;color:#1a3a5c">{{ p.name }}</a><br><span style="font-size:10px;color:#888">{{ (p.description or '')[:40] }}</span></td>
+<td style="font-size:11px">{{ p.manager_name or '-' }}</td>
+<td>{% if p.priority=='haute' %}<span style="color:#c53030;font-weight:600">🔴 Haute</span>{% elif p.priority=='moyenne' %}<span style="color:#e8672a">🟠 Moyenne</span>{% else %}<span style="color:#2e7d32">🟢 Basse</span>{% endif %}</td>
+<td style="font-size:11px">{{ p.start_date or '-' }}</td>
+<td style="font-size:11px">{{ p.end_date or '-' }}</td>
+<td style="font-size:11px;font-weight:600">{{ '{:,.0f}'.format(p.budget or 0) }} F</td>
+<td style="text-align:center">{{ p.task_done }}/{{ p.task_count }}</td>
+<td><div style="width:60px;height:6px;background:#eee;border-radius:3px;display:inline-block;vertical-align:middle"><div style="height:100%;width:{{ pct }}%;background:#2e7d32;border-radius:3px"></div></div> <span style="font-size:10px">{{ pct }}%</span></td>
+<td><span class="badge-status {% if p.status=='termine' %}sent{% elif p.status=='en_cours' %}pending{% endif %}">{{ p.status }}</span></td>
+<td><a href="/resp-projet/projet/{{ p.id }}" class="btn btn-outline btn-sm">👁️</a></td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:40px">Aucun projet. <a href="#" onclick="document.getElementById('addM').classList.add('active')">Créer le premier →</a></div></div>{% endif %}
+
+<div class="modal-bg" id="addM"><div class="modal" style="max-width:550px"><h3>📁 Nouveau projet</h3><form method="post" action="/resp-projet/projet/add">
+<div class="form-group"><label>Nom du projet *</label><input type="text" name="name" required></div>
+<div class="form-group"><label>Objectifs</label><textarea name="objectives" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
+<div class="form-row"><div class="form-group"><label>Priorité</label><select name="priority"><option value="basse">Basse</option><option value="moyenne" selected>Moyenne</option><option value="haute">Haute</option></select></div>
+<div class="form-group"><label>Statut</label><select name="status"><option value="non_commence">Non commencé</option><option value="en_cours">En cours</option></select></div></div>
+<div class="form-row"><div class="form-group"><label>Date début</label><input type="date" name="start_date"></div><div class="form-group"><label>Date fin</label><input type="date" name="end_date"></div></div>
+<div class="form-row"><div class="form-group"><label>Budget (FCFA)</label><input type="number" name="budget" step="1" min="0"></div>
+<div class="form-group"><label>Responsable</label><select name="manager_id"><option value="">—</option>{% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></div></div>
+<div class="form-group"><label>Client</label><select name="client_id"><option value="">—</option>{% for c in clients %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></div>
+<div class="form-group"><label>Description</label><textarea name="description" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px;font-size:13px"></textarea></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button><button type="submit" class="btn btn-primary">📁 Créer</button></div></form></div></div>
+{% endblock %}

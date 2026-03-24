@@ -1,132 +1,128 @@
 {% extends "base.html" %}{% block title %}WannyGest - Assiduité Rapports{% endblock %}{% block content %}
 <style>
-.rank-card{border-radius:12px;padding:14px 18px;margin-bottom:8px;display:flex;align-items:center;gap:14px;transition:all 0.2s}
+.rank-card{border-radius:10px;padding:12px 16px;margin-bottom:6px;display:flex;align-items:center;gap:12px;transition:all 0.2s}
 .rank-card:hover{box-shadow:0 4px 12px rgba(0,0,0,0.08)}
-.rank-num{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff}
-.rank-bar{height:8px;border-radius:4px;background:#eee;flex:1;overflow:hidden}
-.rank-fill{height:100%;border-radius:4px;transition:width 0.5s}
-.trophy{font-size:36px;text-align:center;margin:10px 0}
-.period-btn{padding:6px 14px;border-radius:8px;font-size:12px;font-weight:600;text-decoration:none;border:1.5px solid #ddd;color:#555}
+.rank-num{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;color:#fff}
+.rank-bar{height:6px;border-radius:3px;background:#eee;flex:1;overflow:hidden}
+.rank-fill{height:100%;border-radius:3px;transition:width 0.5s}
+.period-btn{padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;text-decoration:none;border:1.5px solid #ddd;color:#555}
 .period-btn.active{background:#1a7a6d;color:#fff;border-color:#1a7a6d}
+.cat-tab{padding:8px 16px;border-radius:8px 8px 0 0;font-weight:700;font-size:12px;cursor:pointer;border:none;background:#f0f0f0;color:#888}
+.cat-tab.active{background:#fff;color:#1a3a5c;border-bottom:2px solid #1a7a6d}
 </style>
 
-<div class="page-header"><h1>🏆 Tableau d'assiduité — Rapports journaliers</h1>
+<div class="page-header"><h1>🏆 Assiduité — Rapports journaliers</h1>
 <a href="/rapports-journaliers" class="btn btn-outline btn-sm">← Rapports</a></div>
 
-<!-- Period selector -->
-<div style="display:flex;gap:8px;margin-bottom:16px">
-{% for key,label in [('semaine','📅 Cette semaine'),('semaine_prec','⏮️ Semaine précédente'),('mois','📆 Ce mois')] %}
+<div style="display:flex;gap:8px;margin-bottom:14px">
+{% for key,label in [('semaine','📅 Cette semaine'),('semaine_prec','⏮️ Semaine passée'),('mois','📆 Ce mois')] %}
     <a href="/rapports-journaliers/assiduite?period={{ key }}" class="period-btn {% if period==key %}active{% endif %}">{{ label }}</a>
 {% endfor %}
 </div>
 
-<div style="text-align:center;font-size:13px;color:#888;margin-bottom:14px">{{ p_label }} — <strong>{{ expected_days }}</strong> jours ouvrés attendus</div>
+<div style="text-align:center;font-size:12px;color:#888;margin-bottom:12px">{{ p_label }} — <strong>{{ expected_days }}</strong> jours attendus (Lun-Sam)</div>
 
-<!-- Stats cards -->
-<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
-    <div class="card" style="text-align:center;padding:16px">
-        <div style="font-size:28px;font-weight:800;color:#1a7a6d">{{ total_reports }}</div>
-        <div style="font-size:11px;color:#888">Rapports déposés</div>
-    </div>
-    <div class="card" style="text-align:center;padding:16px">
-        <div style="font-size:28px;font-weight:800;color:#1565c0">{{ total_users }}</div>
-        <div style="font-size:11px;color:#888">Personnes actives</div>
-    </div>
-    <div class="card" style="text-align:center;padding:16px">
-        <div style="font-size:28px;font-weight:800;color:#B8860B">{{ assidus }}</div>
-        <div style="font-size:11px;color:#888">🏆 Employés assidus</div>
-    </div>
-    <div class="card" style="text-align:center;padding:16px">
-        <div style="font-size:28px;font-weight:800;color:#c53030">{{ ranking|length - total_users }}</div>
-        <div style="font-size:11px;color:#888">Sans rapport</div>
-    </div>
+<!-- Stats -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px">
+    <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:#1a7a6d">{{ total_reports }}</div><div style="font-size:10px;color:#888">Rapports</div></div>
+    <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:#1565c0">{{ total_users }}</div><div style="font-size:10px;color:#888">Actifs</div></div>
+    <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:#B8860B">{{ assidus }}</div><div style="font-size:10px;color:#888">🏆 Assidus</div></div>
+    <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:#c53030">{{ ranking|length - total_users }}</div><div style="font-size:10px;color:#888">Sans rapport</div></div>
 </div>
 
-<!-- Best employee spotlight -->
-{% if best and best.taux >= 80 %}
-<div class="card" style="background:linear-gradient(135deg,#FFF8E1,#FFF3E0);border:2px solid #B8860B;margin-bottom:16px">
-    <div style="padding:18px;display:flex;align-items:center;gap:16px">
-        <div class="trophy">🏆</div>
-        <div>
-            <div style="font-size:11px;color:#B8860B;font-weight:700;text-transform:uppercase;letter-spacing:1px">Employé le plus assidu</div>
-            <div style="font-size:20px;font-weight:800;color:#333;margin:4px 0">{{ best.full_name }}</div>
-            <div style="font-size:13px;color:#555">
-                <strong>{{ best.nb_rapports }}</strong> rapports déposés sur <strong>{{ expected_days }}</strong> attendus
-                — Taux : <strong style="color:#B8860B">{{ best.taux }}%</strong>
-                — Réalisation moyenne : <strong>{{ best.avg_completion }}%</strong>
-            </div>
-        </div>
-        <div style="margin-left:auto;text-align:center">
-            <div style="font-size:40px;font-weight:800;color:#B8860B">{{ best.taux }}%</div>
-            <div style="font-size:10px;color:#888">d'assiduité</div>
-        </div>
-    </div>
+<!-- Category tabs -->
+<div style="display:flex;gap:4px;margin-bottom:0">
+    <button class="cat-tab active" onclick="showCat('tech')">🔧 Techniciens ({{ ranking_tech|length }})</button>
+    <button class="cat-tab" onclick="showCat('admin')">🏢 Administration ({{ ranking_admin|length }})</button>
+    <button class="cat-tab" onclick="showCat('all')">👥 Tous ({{ ranking|length }})</button>
+</div>
+
+<!-- TECHNICIANS -->
+<div id="cat-tech" class="card" style="border-radius:0 8px 8px 8px">
+{% if best_tech and best_tech.taux >= 80 %}
+<div style="background:linear-gradient(135deg,#FFF8E1,#FFF3E0);padding:14px;display:flex;align-items:center;gap:14px;border-bottom:1px solid #eee">
+    <div style="font-size:28px">🏆</div>
+    <div><div style="font-size:10px;color:#B8860B;font-weight:700;text-transform:uppercase;letter-spacing:1px">Technicien le plus assidu</div>
+    <div style="font-size:16px;font-weight:800">{{ best_tech.full_name }}</div>
+    <div style="font-size:11px;color:#555">{{ best_tech.nb_rapports }} rapports — {{ best_tech.taux }}%</div></div>
+    <div style="margin-left:auto;font-size:28px;font-weight:800;color:#B8860B">{{ best_tech.taux }}%</div>
 </div>
 {% endif %}
-
-<!-- Attestations disponibles -->
-{% if user.role in ('admin','dg') %}
-<div style="margin-bottom:14px">
-{% for champ in champions_list %}
-<a href="/rapports-journaliers/attestation/{{ champ.id }}" class="btn btn-sm" style="background:linear-gradient(135deg,#B8860B,#DAA520);color:#1a1a2e;font-weight:700;margin-right:6px;margin-bottom:4px">📜 Attestation — {{ champ.full_name }} ({{ champ.week_start }})</a>
-{% endfor %}
-</div>
-{% endif %}
-
-<!-- Ranking table -->
-<div class="card"><div class="card-header"><h3>📊 Classement par assiduité</h3></div><div class="card-body" style="padding:8px">
-{% for r in ranking %}
+<div style="padding:8px">
+{% for r in ranking_tech %}
+{{ caller() if caller is defined else '' }}
 <div class="rank-card" style="background:{% if loop.index <= 3 and r.taux >= 80 %}#FFFDE7{% elif r.nb_rapports == 0 %}#fde8e8{% else %}#fff{% endif %};border:1px solid {% if r.taux >= 100 %}#B8860B{% elif r.taux >= 80 %}#a5d6a7{% elif r.nb_rapports == 0 %}#ef9a9a{% else %}#eee{% endif %}">
-    <!-- Rank number -->
-    <div class="rank-num" style="background:{% if loop.index == 1 and r.taux >= 80 %}#B8860B{% elif loop.index == 2 and r.taux >= 80 %}#9E9E9E{% elif loop.index == 3 and r.taux >= 80 %}#8D6E63{% elif r.nb_rapports == 0 %}#c53030{% else %}#1a7a6d{% endif %}">
-        {% if loop.index == 1 and r.taux >= 80 %}🥇{% elif loop.index == 2 and r.taux >= 80 %}🥈{% elif loop.index == 3 and r.taux >= 80 %}🥉{% else %}{{ loop.index }}{% endif %}
-    </div>
-    
-    <!-- Name + role -->
-    <div style="min-width:160px">
-        <strong style="font-size:13px">{{ r.full_name }}</strong>
-        <div style="font-size:10px;color:#888">{{ r.role }}</div>
-    </div>
-    
-    <!-- Counter -->
-    <div style="text-align:center;min-width:80px">
-        <div style="font-size:20px;font-weight:800;color:{% if r.taux >= 100 %}#B8860B{% elif r.taux >= 80 %}#2e7d32{% elif r.nb_rapports == 0 %}#c53030{% else %}#1565c0{% endif %}">{{ r.nb_rapports }}</div>
-        <div style="font-size:9px;color:#888">sur {{ r.expected }}</div>
-    </div>
-    
-    <!-- Progress bar -->
-    <div style="flex:1;min-width:120px">
-        <div class="rank-bar"><div class="rank-fill" style="width:{{ r.taux }}%;background:{% if r.taux >= 100 %}#B8860B{% elif r.taux >= 80 %}#2e7d32{% elif r.taux >= 60 %}#1565c0{% elif r.taux >= 40 %}#e8672a{% else %}#c53030{% endif %}"></div></div>
-        <div style="font-size:10px;color:#888;margin-top:2px">{{ r.taux }}% d'assiduité</div>
-    </div>
-    
-    <!-- Completion avg -->
-    <div style="text-align:center;min-width:60px">
-        <div style="font-size:14px;font-weight:700;color:#1a7a6d">{{ r.avg_completion }}%</div>
-        <div style="font-size:9px;color:#888">réalisation</div>
-    </div>
-    
-    <!-- Badge -->
-    <div style="min-width:110px;text-align:right">
-        <span style="padding:4px 10px;border-radius:6px;font-size:10px;font-weight:700;color:#fff;background:{{ r.badge_color }}">{{ r.badge }}</span>
-    </div>
+    <div class="rank-num" style="background:{% if loop.index == 1 and r.taux >= 80 %}#B8860B{% elif loop.index == 2 and r.taux >= 80 %}#9E9E9E{% elif loop.index == 3 and r.taux >= 80 %}#8D6E63{% elif r.nb_rapports == 0 %}#c53030{% else %}#1a7a6d{% endif %}">{{ loop.index }}</div>
+    <div style="min-width:130px"><strong style="font-size:12px">{{ r.full_name }}</strong><div style="font-size:9px;color:#888">{{ r.role }}</div></div>
+    <div style="text-align:center;min-width:55px"><div style="font-size:18px;font-weight:800;color:{% if r.taux >= 100 %}#B8860B{% elif r.nb_rapports == 0 %}#c53030{% else %}#1565c0{% endif %}">{{ r.nb_rapports }}</div><div style="font-size:8px;color:#888">/ {{ r.expected }}</div></div>
+    <div style="flex:1;min-width:80px"><div class="rank-bar"><div class="rank-fill" style="width:{{ r.taux }}%;background:{% if r.taux >= 100 %}#B8860B{% elif r.taux >= 80 %}#2e7d32{% elif r.taux >= 60 %}#1565c0{% else %}#c53030{% endif %}"></div></div><div style="font-size:9px;color:#888;margin-top:1px">{{ r.taux }}%</div></div>
+    <span style="padding:3px 8px;border-radius:5px;font-size:9px;font-weight:700;color:#fff;background:{{ r.badge_color }}">{{ r.badge }}</span>
 </div>
 {% endfor %}
-
-{% if not ranking %}
-<p style="text-align:center;color:#999;padding:30px">Aucun rapport pour cette période</p>
-{% endif %}
+{% if not ranking_tech %}<p style="text-align:center;color:#999;padding:20px">Aucun technicien</p>{% endif %}
 </div></div>
 
-<!-- Legend -->
-<div class="card" style="margin-top:14px"><div class="card-body" style="padding:14px">
-<h4 style="font-size:12px;color:#1a3a5c;margin:0 0 8px">Légende des badges</h4>
-<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px">
-    <span><span style="padding:3px 8px;border-radius:4px;background:#B8860B;color:#fff;font-weight:600">🏆 Assidu</span> 100% des rapports déposés</span>
-    <span><span style="padding:3px 8px;border-radius:4px;background:#2e7d32;color:#fff;font-weight:600">⭐ Régulier</span> 80-99%</span>
-    <span><span style="padding:3px 8px;border-radius:4px;background:#1565c0;color:#fff;font-weight:600">👍 Correct</span> 60-79%</span>
-    <span><span style="padding:3px 8px;border-radius:4px;background:#e8672a;color:#fff;font-weight:600">⚠️ À améliorer</span> 40-59%</span>
-    <span><span style="padding:3px 8px;border-radius:4px;background:#c53030;color:#fff;font-weight:600">🔴 Insuffisant</span> &lt;40%</span>
+<!-- ADMINISTRATION -->
+<div id="cat-admin" class="card" style="display:none;border-radius:0 8px 8px 8px">
+{% if best_admin and best_admin.taux >= 80 %}
+<div style="background:linear-gradient(135deg,#E3F2FD,#E8EAF6);padding:14px;display:flex;align-items:center;gap:14px;border-bottom:1px solid #eee">
+    <div style="font-size:28px">🏆</div>
+    <div><div style="font-size:10px;color:#1565c0;font-weight:700;text-transform:uppercase;letter-spacing:1px">Administratif le plus assidu</div>
+    <div style="font-size:16px;font-weight:800">{{ best_admin.full_name }}</div>
+    <div style="font-size:11px;color:#555">{{ best_admin.nb_rapports }} rapports — {{ best_admin.taux }}%</div></div>
+    <div style="margin-left:auto;font-size:28px;font-weight:800;color:#1565c0">{{ best_admin.taux }}%</div>
 </div>
+{% endif %}
+<div style="padding:8px">
+{% for r in ranking_admin %}
+<div class="rank-card" style="background:{% if loop.index <= 3 and r.taux >= 80 %}#E3F2FD{% elif r.nb_rapports == 0 %}#fde8e8{% else %}#fff{% endif %};border:1px solid {% if r.taux >= 100 %}#1565c0{% elif r.taux >= 80 %}#a5d6a7{% elif r.nb_rapports == 0 %}#ef9a9a{% else %}#eee{% endif %}">
+    <div class="rank-num" style="background:{% if loop.index == 1 and r.taux >= 80 %}#1565c0{% elif loop.index == 2 and r.taux >= 80 %}#9E9E9E{% elif loop.index == 3 and r.taux >= 80 %}#8D6E63{% elif r.nb_rapports == 0 %}#c53030{% else %}#1a7a6d{% endif %}">{{ loop.index }}</div>
+    <div style="min-width:130px"><strong style="font-size:12px">{{ r.full_name }}</strong><div style="font-size:9px;color:#888">{{ r.role }}</div></div>
+    <div style="text-align:center;min-width:55px"><div style="font-size:18px;font-weight:800;color:{% if r.taux >= 100 %}#1565c0{% elif r.nb_rapports == 0 %}#c53030{% else %}#1a7a6d{% endif %}">{{ r.nb_rapports }}</div><div style="font-size:8px;color:#888">/ {{ r.expected }}</div></div>
+    <div style="flex:1;min-width:80px"><div class="rank-bar"><div class="rank-fill" style="width:{{ r.taux }}%;background:{% if r.taux >= 100 %}#1565c0{% elif r.taux >= 80 %}#2e7d32{% elif r.taux >= 60 %}#1a7a6d{% else %}#c53030{% endif %}"></div></div><div style="font-size:9px;color:#888;margin-top:1px">{{ r.taux }}%</div></div>
+    <span style="padding:3px 8px;border-radius:5px;font-size:9px;font-weight:700;color:#fff;background:{{ r.badge_color }}">{{ r.badge }}</span>
+</div>
+{% endfor %}
+{% if not ranking_admin %}<p style="text-align:center;color:#999;padding:20px">Aucun administratif</p>{% endif %}
 </div></div>
+
+<!-- ALL -->
+<div id="cat-all" class="card" style="display:none;border-radius:0 8px 8px 8px">
+{% if best and best.taux >= 80 %}
+<div style="background:linear-gradient(135deg,#FFF8E1,#FFF3E0);padding:14px;display:flex;align-items:center;gap:14px;border-bottom:1px solid #eee">
+    <div style="font-size:28px">🏆</div>
+    <div><div style="font-size:10px;color:#B8860B;font-weight:700;text-transform:uppercase">Employé le plus assidu</div>
+    <div style="font-size:16px;font-weight:800">{{ best.full_name }}</div></div>
+    <div style="margin-left:auto;font-size:28px;font-weight:800;color:#B8860B">{{ best.taux }}%</div>
+</div>
+{% endif %}
+<div style="padding:8px">
+{% for r in ranking %}
+<div class="rank-card" style="background:{% if r.nb_rapports == 0 %}#fde8e8{% else %}#fff{% endif %};border:1px solid {% if r.taux >= 100 %}#B8860B{% elif r.nb_rapports == 0 %}#ef9a9a{% else %}#eee{% endif %}">
+    <div class="rank-num" style="background:{% if loop.index <= 3 and r.taux >= 80 %}#B8860B{% elif r.nb_rapports == 0 %}#c53030{% else %}#1a7a6d{% endif %}">{{ loop.index }}</div>
+    <div style="min-width:130px"><strong style="font-size:12px">{{ r.full_name }}</strong><div style="font-size:9px;color:#888">{{ r.role }}</div></div>
+    <div style="text-align:center;min-width:55px"><div style="font-size:18px;font-weight:800">{{ r.nb_rapports }}</div><div style="font-size:8px;color:#888">/ {{ r.expected }}</div></div>
+    <div style="flex:1;min-width:80px"><div class="rank-bar"><div class="rank-fill" style="width:{{ r.taux }}%;background:{% if r.taux >= 100 %}#B8860B{% elif r.taux >= 80 %}#2e7d32{% else %}#c53030{% endif %}"></div></div></div>
+    <span style="padding:3px 8px;border-radius:5px;font-size:9px;font-weight:700;color:#fff;background:{{ r.badge_color }}">{{ r.badge }}</span>
+</div>
+{% endfor %}
+</div></div>
+
+<!-- Attestations -->
+{% if user.role in ('admin','dg') and champions_list %}
+<div class="card" style="margin-top:12px"><div class="card-header"><h3>📜 Attestations</h3></div><div class="card-body">
+{% for ch in champions_list %}
+<a href="/rapports-journaliers/attestation/{{ ch.id }}" class="btn btn-sm" style="background:linear-gradient(135deg,#B8860B,#DAA520);color:#1a1a2e;font-weight:600;margin:2px">📜 {{ ch.full_name }} ({{ ch.week_start }})</a>
+{% endfor %}
+</div></div>
+{% endif %}
+
+<script>
+function showCat(cat) {
+    ['tech','admin','all'].forEach(function(c){document.getElementById('cat-'+c).style.display='none'});
+    document.getElementById('cat-'+cat).style.display='block';
+    document.querySelectorAll('.cat-tab').forEach(function(t){t.classList.remove('active')});
+    event.target.classList.add('active');
+}
+</script>
 {% endblock %}

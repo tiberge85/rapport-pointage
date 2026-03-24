@@ -196,12 +196,12 @@ def init_db():
     
     # Permissions par défaut — tous les rôles
     default_perms = {
-        'admin': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis'],
-        'dg': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis'],
+        'admin': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet'],
+        'dg': ['traitement', 'fichiers', 'clients', 'clients_edit', 'admin', 'dashboard', 'dashboard_general', 'envoyer', 'logs', 'contrats', 'comptabilite', 'comptabilite_edit', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'moyens_generaux', 'moyens_generaux_edit', 'informatique', 'projets', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet'],
         'rh': ['fichiers', 'clients', 'dashboard', 'envoyer', 'contrats', 'rapports_j'],
         'technicien': ['traitement', 'dashboard', 'visites', 'rapports_j'],
         'commercial': ['dashboard', 'clients', 'visites', 'visites_edit', 'proforma', 'proforma_edit', 'contrats', 'rapports_j'],
-        'comptable': ['dashboard', 'comptabilite', 'comptabilite_edit', 'clients', 'caisse_sortie', 'rapports_j', 'convertir_devis'],
+        'comptable': ['dashboard', 'comptabilite', 'comptabilite_edit', 'clients', 'caisse_sortie', 'rapports_j', 'convertir_devis', 'resp_projet'],
         'moyens_generaux': ['dashboard', 'moyens_generaux', 'moyens_generaux_edit', 'clients', 'rapports_j'],
         'informatique': ['dashboard', 'informatique', 'traitement', 'visites', 'projets', 'rapports_j'],
     }
@@ -2097,6 +2097,135 @@ def migrate_v14():
             reference TEXT, date TEXT, source TEXT, montant REAL,
             description TEXT, payment_method TEXT,
             created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    conn.commit(); conn.close()
+
+def migrate_v15():
+    conn = get_db()
+    # Add fields to projects
+    for col in ['progress', 'budget_consumed', 'objectives']:
+        try: conn.execute(f"ALTER TABLE projects ADD COLUMN {col} TEXT DEFAULT '0'")
+        except: pass
+    # Task comments
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS task_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER, user_id INTEGER, content TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    conn.commit(); conn.close()
+
+def migrate_v15():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS plan_comptable (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero TEXT UNIQUE NOT NULL,
+            libelle TEXT NOT NULL,
+            type TEXT NOT NULL DEFAULT 'actif',
+            categorie TEXT DEFAULT '',
+            classe TEXT DEFAULT '',
+            parent_id INTEGER,
+            solde_debit REAL DEFAULT 0,
+            solde_credit REAL DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS ecritures_comptables (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT NOT NULL,
+            journal TEXT DEFAULT 'OD',
+            piece TEXT,
+            compte_debit TEXT,
+            compte_credit TEXT,
+            libelle TEXT,
+            montant REAL DEFAULT 0,
+            created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS bilans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exercice TEXT,
+            date_cloture TEXT,
+            total_actif REAL DEFAULT 0,
+            total_passif REAL DEFAULT 0,
+            resultat REAL DEFAULT 0,
+            data_json TEXT,
+            status TEXT DEFAULT 'brouillon',
+            created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    
+    # Insert default SYSCOHADA plan comptable if empty
+    cnt = conn.execute("SELECT COUNT(*) FROM plan_comptable").fetchone()[0]
+    if cnt == 0:
+        comptes = [
+            ('101','Capital social','passif','capitaux','1'),
+            ('106','Réserves','passif','capitaux','1'),
+            ('12','Résultat de l exercice','passif','capitaux','1'),
+            ('131','Résultat net: bénéfice','passif','capitaux','1'),
+            ('162','Emprunts et dettes','passif','dettes_financieres','1'),
+            ('21','Immobilisations corporelles','actif','immobilise','2'),
+            ('22','Terrains','actif','immobilise','2'),
+            ('23','Bâtiments','actif','immobilise','2'),
+            ('24','Matériel et outillage','actif','immobilise','2'),
+            ('245','Matériel de transport','actif','immobilise','2'),
+            ('25','Avances et acomptes versés','actif','immobilise','2'),
+            ('27','Autres immobilisations financières','actif','immobilise','2'),
+            ('28','Amortissements','actif','immobilise','2'),
+            ('31','Marchandises','actif','circulant','3'),
+            ('32','Matières premières','actif','circulant','3'),
+            ('33','Autres approvisionnements','actif','circulant','3'),
+            ('36','Produits finis','actif','circulant','3'),
+            ('401','Fournisseurs','passif','dettes_circulant','4'),
+            ('411','Clients','actif','circulant','4'),
+            ('421','Personnel rémunérations dues','passif','dettes_circulant','4'),
+            ('431','Sécurité sociale','passif','dettes_circulant','4'),
+            ('441','État impôts sur les bénéfices','passif','dettes_circulant','4'),
+            ('445','État TVA','passif','dettes_circulant','4'),
+            ('471','Comptes d attente','actif','circulant','4'),
+            ('512','Banque','actif','tresorerie','5'),
+            ('517','Caisse','actif','tresorerie','5'),
+            ('52','Banques comptes courants','actif','tresorerie','5'),
+            ('531','Caisse en monnaie nationale','actif','tresorerie','5'),
+            ('60','Achats','passif','charges','6'),
+            ('61','Transports','passif','charges','6'),
+            ('62','Services extérieurs','passif','charges','6'),
+            ('63','Autres services extérieurs','passif','charges','6'),
+            ('64','Impôts et taxes','passif','charges','6'),
+            ('65','Autres charges','passif','charges','6'),
+            ('66','Charges de personnel','passif','charges','6'),
+            ('67','Frais financiers','passif','charges','6'),
+            ('68','Dotations aux amortissements','passif','charges','6'),
+            ('70','Ventes de marchandises','actif','produits','7'),
+            ('71','Production vendue services','actif','produits','7'),
+            ('72','Production stockée','actif','produits','7'),
+            ('75','Autres produits','actif','produits','7'),
+            ('77','Revenus financiers','actif','produits','7'),
+            ('78','Reprises amortissements','actif','produits','7'),
+        ]
+        for num, lib, typ, cat, cls in comptes:
+            conn.execute("INSERT INTO plan_comptable (numero, libelle, type, categorie, classe) VALUES (?,?,?,?,?)",
+                (num, lib, typ, cat, cls))
+    
+    conn.commit(); conn.close()
+
+def migrate_v16():
+    conn = get_db()
+    for col in ['objectives', 'client', 'budget_consumed']:
+        try: conn.execute(f"ALTER TABLE projects ADD COLUMN {col} TEXT DEFAULT ''")
+        except: pass
+    # Add deadline alerts column
+    try: conn.execute("ALTER TABLE tasks ADD COLUMN reminder_date TEXT DEFAULT ''")
+    except: pass
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS task_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id INTEGER, user_id INTEGER, content TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (task_id) REFERENCES tasks(id)
         );
     ''')
     conn.commit(); conn.close()

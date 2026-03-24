@@ -1,103 +1,33 @@
 {% extends "base.html" %}{% block title %}WannyGest - Guide{% endblock %}{% block content %}
-<style>
-.guide-header{background:linear-gradient(135deg,#0d2137,#1a4a6c);border-radius:14px;padding:30px;color:#fff;text-align:center;margin-bottom:24px}
-.guide-header h1{font-size:26px;font-weight:800;margin-bottom:6px}.guide-header p{opacity:0.7;font-size:14px}
-.modules-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
-.mod-card{background:#fff;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,0.06);overflow:hidden;transition:transform 0.3s}
-.mod-card:hover{transform:translateY(-3px)}
-.mod-top{padding:20px;text-align:center;color:#fff}
-.mod-top .icon{font-size:36px;margin-bottom:8px}.mod-top h3{font-size:16px;font-weight:700}
-.mod-body{padding:16px}.mod-body p{font-size:12px;color:#666;line-height:1.6;margin-bottom:10px}
-.mod-body ul{font-size:12px;color:#555;padding-left:18px;margin-bottom:12px;line-height:1.7}
-.mod-body a{display:inline-block;padding:7px 16px;background:#1a3a5c;color:#fff;border-radius:6px;text-decoration:none;font-size:12px;font-weight:600}
-.skip-link{text-align:center;margin-top:20px}
-.skip-link a{color:#888;font-size:13px;text-decoration:none}
-.step-indicator{display:flex;justify-content:center;gap:8px;margin-bottom:20px}
-.step-dot{width:10px;height:10px;border-radius:50%;background:#ddd}.step-dot.active{background:#e8672a}
-</style>
+<div class="page-header"><h1>📖 Guide WannyGest</h1></div>
+<p style="color:#888;font-size:13px;margin-bottom:16px">Bienvenue ! Voici les modules disponibles dans WannyGest.</p>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
 
-<div class="guide-header">
-    <h1>🎓 Bienvenue sur WannyGest !</h1>
-    <p>Découvrez les fonctionnalités de votre plateforme de gestion</p>
-</div>
-
-<div class="modules-grid">
-    <div class="mod-card">
-        <div class="mod-top" style="background:linear-gradient(135deg,#1a3a5c,#2a5a8c)"><div class="icon">⏱️</div><h3>Gestion du Temps</h3></div>
-        <div class="mod-body">
-            <p>Calculez automatiquement les heures de présence de vos employés à partir des fichiers de pointage Excel.</p>
-            <ul><li>Import des fichiers Enregistrement + Transactions</li><li>Fusion automatique des données</li><li>Rapport PDF avec heures travaillées, retards, heures sup</li><li>Graphique d'assiduité et classement</li></ul>
-            {% if 'traitement' in permissions %}<a href="/traitement">Commencer →</a>{% endif %}
-        </div>
-    </div>
-    
-    <div class="mod-card">
-        <div class="mod-top" style="background:linear-gradient(135deg,#e8672a,#d45a20)"><div class="icon">🎯</div><h3>CRM</h3></div>
-        <div class="mod-body">
-            <p><strong>Gestion commerciale :</strong> Gérez vos opérations commerciales avec efficacité.</p>
-            <p><strong>Relation client :</strong> Conservez tout l'historique client dans un seul outil.</p>
-            <ul><li>Pipeline prospects → clients</li><li>Rapports de visite technique terrain</li><li>Édition devis et proformas PDF</li><li>Gestion des contrats</li></ul>
-            {% if 'clients' in permissions %}<a href="/clients">Explorer →</a>{% endif %}
-        </div>
-    </div>
-    
-    <div class="mod-card">
-        <div class="mod-top" style="background:linear-gradient(135deg,#2e7d32,#43a047)"><div class="icon">👥</div><h3>Gestion RH</h3></div>
-        <div class="mod-body">
-            <p>Gérez l'ensemble du personnel : dossiers, congés, paie, formations et annonces internes.</p>
-            <ul><li>Fiches employés complètes</li><li>Descriptions d'emploi et organigramme</li><li>Gestion des congés avec approbation</li><li>Bulletins de paie (base + bonus + déductions)</li><li>Programme de formation</li><li>Envoi de rapports aux clients</li></ul>
-            {% if 'fichiers' in permissions %}<a href="/rh">Explorer →</a>{% endif %}
-        </div>
-    </div>
-    
-    <div class="mod-card">
-        <div class="mod-top" style="background:linear-gradient(135deg,#f57f17,#ff9800)"><div class="icon">💰</div><h3>Comptabilité & Finance</h3></div>
-        <div class="mod-body">
-            <p><strong>Comptabilité Finance :</strong> Votre gestion comptable n'a jamais été aussi simple.</p>
-            <ul><li>Suivi factures : à envoyer → envoyées → payées</li><li>Trésorerie : recettes vs dépenses, solde temps réel</li><li>Notes de frais avec validation</li><li>Workflow automatique depuis le service RH</li></ul>
-            {% if 'comptabilite' in permissions %}<a href="/comptabilite">Explorer →</a>{% endif %}
-        </div>
-    </div>
-    
-    <div class="mod-card">
-        <div class="mod-top" style="background:linear-gradient(135deg,#5c6bc0,#3f51b5)"><div class="icon">💻</div><h3>Informatique & Projets</h3></div>
-        <div class="mod-body">
-            <p><strong>Gestion d'interventions :</strong> Améliorez la productivité des techniciens terrain.</p>
-            <p><strong>Dématérialisation :</strong> Gérez facilement les flux dématérialisés.</p>
-            <ul><li>Suivi de projets avec statut et budget</li><li>Attribution de tâches aux équipes</li><li>Tickets de support technique</li><li>Calendrier partagé</li><li>Liste de todos personnelle</li></ul>
-            {% if 'informatique' in permissions or 'projets' in permissions %}<a href="/projets">Explorer →</a>{% endif %}
-        </div>
-    </div>
-    
-    <div class="mod-card">
-        <div class="mod-top" style="background:linear-gradient(135deg,#8d6e63,#6d4c41)"><div class="icon">🏠</div><h3>Moyens Généraux</h3></div>
-        <div class="mod-body">
-            <p><strong>Gestion des stocks :</strong> Gérez vos stocks et pilotez vos flux logistiques.</p>
-            <ul><li>Stock matériel avec alertes stock bas</li><li>Parc véhicules (assurance, visite technique)</li><li>Fournitures de bureau</li><li>Demandes de maintenance avec suivi</li></ul>
-            {% if 'moyens_generaux' in permissions or 'admin' in permissions %}<a href="/moyens-generaux">Explorer →</a>{% endif %}
-        </div>
-    </div>
-    
-    <div class="mod-card">
-        <div class="mod-top" style="background:linear-gradient(135deg,#1a3a5c,#0d2137)"><div class="icon">💬</div><h3>Communication</h3></div>
-        <div class="mod-body">
-            <p>Communiquez avec votre équipe directement depuis WannyGest.</p>
-            <ul><li>Chat par canaux (#général, #technique, #commercial)</li><li>Messages directs entre collègues</li><li>Appels audio et vidéo (via Jitsi Meet)</li><li>Réunions en ligne</li></ul>
-            <a href="/chat">Ouvrir le chat →</a>
-        </div>
-    </div>
-    
-    <div class="mod-card">
-        <div class="mod-top" style="background:linear-gradient(135deg,#c53030,#e53935)"><div class="icon">⚙️</div><h3>Administration</h3></div>
-        <div class="mod-body">
-            <p>Gérez les utilisateurs, les rôles, les permissions et la sécurité du système.</p>
-            <ul><li>7 rôles avec permissions personnalisables</li><li>Logs d'activité complets</li><li>Sauvegarde de la base de données</li><li>Export de statistiques</li></ul>
-            {% if 'admin' in permissions %}<a href="/admin">Explorer →</a>{% endif %}
-        </div>
-    </div>
-</div>
-
-<div class="skip-link">
-    <a href="/dashboard?skip_guide=1">Passer le guide et aller au tableau de bord →</a>
+{% for icon,title,desc,link in [
+('📊','Dashboard Général','Vue globale : factures, devis, stock, RH, prospects. KPIs et graphiques.','/dashboard-general'),
+('🔧','Traitement & DPCI','Import Excel de pointage, calcul heures, PDF professionnel, impact financier.','/traitement'),
+('💰','Comptabilité','Factures (créer, prévisualiser, modifier, imprimer), devis → facture, bilan comptable mensuel, pièces de caisse.','/comptabilite'),
+('💵','Caisse','Demandes de sortie (validation DG), entrées de caisse, suivi mensuel.','/caisse-sortie'),
+('🏦','Banque','Comptes bancaires (courant/épargne), soldes, mouvements, transferts.','/tresorerie'),
+('📋','Rapport caisse','Import Excel hebdomadaire, création manuelle, prévisualisation, export PDF/Excel, modification.','/comptabilite/rapport-caisse'),
+('📊','Bilan comptable','Bilan mensuel : entrées vs sorties, factures, caisse, banque. Export PDF.','/comptabilite/bilan'),
+('📁','Resp. Projet','Gestion de projets, tâches (statuts, priorités), planning Gantt, KPIs, commentaires.','/resp-projet'),
+('👥','CRM / Prospects','Suivi commercial, prospects (profil, offres, tâches, rappels, notes), conversion client.','/prospects'),
+('🏗️','Centre Technique','Clients techniques, maintenance, devis, notes de suivi.','/centre-technique'),
+('📝','Rapports journaliers','Dépôt quotidien (Lun-Sam), compteur personnel, assiduité avec classement Techniciens vs Administration.','/rapports-journaliers'),
+('🏆','Assiduité','Classement par catégorie : Techniciens et Administration. Badges, champion de la semaine, attestation PDF.','/rapports-journaliers/assiduite'),
+('📑','Devis & Proformas','Création, prévisualisation, envoi, suivi de statut, duplication, conversion en facture.','/devis'),
+('👷','Ressources Humaines','Employés, fiches de paie, contrats, formations, annonces, organigramme.','/fichiers'),
+('🏪','Moyens Généraux','Stock (entrées/sorties/alertes), inventaire.','/moyens-generaux'),
+('💬','Chat','Messagerie par canaux + messages directs, appels Jitsi Meet.','/chat'),
+('⚙️','Administration','Utilisateurs, rôles, permissions dynamiques, logs, réinitialisation.','/admin')
+] %}
+<a href="{{ link }}" style="text-decoration:none;color:inherit">
+<div class="card" style="padding:16px;transition:all 0.2s;cursor:pointer" onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,0.1)'" onmouseout="this.style.boxShadow=''">
+    <div style="font-size:28px;margin-bottom:6px">{{ icon }}</div>
+    <div style="font-size:14px;font-weight:700;color:#1a3a5c;margin-bottom:4px">{{ title }}</div>
+    <div style="font-size:11px;color:#888;line-height:1.4">{{ desc }}</div>
+</div></a>
+{% endfor %}
 </div>
 {% endblock %}

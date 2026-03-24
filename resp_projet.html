@@ -1,0 +1,75 @@
+{% extends "base.html" %}{% block title %}WannyGest - Responsable Projet{% endblock %}{% block content %}
+<div class="page-header"><h1>📁 Tableau de bord — Responsable Projet</h1>
+<a href="/resp-projet/projets" class="btn btn-primary btn-sm">+ Nouveau projet</a></div>
+
+{% if en_retard > 0 %}
+<div style="background:#fde8e8;border:1px solid #ef9a9a;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+    <span style="font-size:22px">⚠️</span>
+    <div><strong style="color:#c53030">{{ en_retard }} projet(s) en retard</strong><br><span style="font-size:11px;color:#888">Des projets ont dépassé leur date de fin sans être terminés.</span></div>
+</div>
+{% endif %}
+{% if deadlines|length > 0 %}
+<div style="background:#fff3e0;border:1px solid #FFE0B2;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px">
+    <span style="font-size:22px">🔔</span>
+    <div><strong style="color:#e8672a">{{ deadlines|length }} tâche(s) avec échéance cette semaine</strong></div>
+</div>
+{% endif %}
+
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+    <div class="card" style="text-align:center;padding:16px;border-left:4px solid #1565c0"><div style="font-size:28px;font-weight:800;color:#1565c0">{{ total_p }}</div><div style="font-size:10px;color:#888">Projets</div></div>
+    <div class="card" style="text-align:center;padding:16px;border-left:4px solid #e8672a"><div style="font-size:28px;font-weight:800;color:#e8672a">{{ en_cours }}</div><div style="font-size:10px;color:#888">En cours</div></div>
+    <div class="card" style="text-align:center;padding:16px;border-left:4px solid #2e7d32"><div style="font-size:28px;font-weight:800;color:#2e7d32">{{ termines }}</div><div style="font-size:10px;color:#888">Terminés</div></div>
+    <div class="card" style="text-align:center;padding:16px;border-left:4px solid #c53030"><div style="font-size:28px;font-weight:800;color:#c53030">{{ en_retard }}</div><div style="font-size:10px;color:#888">En retard</div></div>
+</div>
+
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin-bottom:14px">
+    <!-- Tâches KPIs -->
+    <div class="card"><div class="card-header"><h3>✅ Suivi des tâches</h3></div><div class="card-body">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+            <div style="text-align:center;padding:10px;background:#f8faf9;border-radius:8px"><div style="font-size:22px;font-weight:800">{{ tasks_total }}</div><div style="font-size:10px;color:#888">Total</div></div>
+            <div style="text-align:center;padding:10px;background:#fff3e0;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#e8672a">{{ tasks_pending }}</div><div style="font-size:10px;color:#888">À faire</div></div>
+            <div style="text-align:center;padding:10px;background:#e3f2fd;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#1565c0">{{ tasks_progress }}</div><div style="font-size:10px;color:#888">En cours</div></div>
+            <div style="text-align:center;padding:10px;background:#e8f5e9;border-radius:8px"><div style="font-size:22px;font-weight:800;color:#2e7d32">{{ tasks_done }}</div><div style="font-size:10px;color:#888">Terminées</div></div>
+        </div>
+        <div style="margin-top:10px;height:12px;background:#eee;border-radius:6px;overflow:hidden">
+            {% set pct = (tasks_done / (tasks_total or 1) * 100)|int %}
+            <div style="height:100%;width:{{ pct }}%;background:linear-gradient(90deg,#2e7d32,#43a047);border-radius:6px"></div>
+        </div>
+        <div style="text-align:center;font-size:12px;color:#888;margin-top:4px">{{ pct }}% des tâches terminées</div>
+    </div></div>
+    
+    <!-- Budget -->
+    <div class="card"><div class="card-header"><h3>💰 Budget</h3></div><div class="card-body" style="text-align:center">
+        <div style="font-size:12px;color:#888">Budget total</div>
+        <div style="font-size:22px;font-weight:800;color:#1a3a5c">{{ '{:,.0f}'.format(budget_total) }} F</div>
+        <div style="font-size:12px;color:#888;margin-top:10px">Consommé</div>
+        <div style="font-size:18px;font-weight:700;color:#e8672a">{{ '{:,.0f}'.format(budget_consumed) }} F</div>
+        {% set bpct = (budget_consumed / (budget_total or 1) * 100)|int %}
+        <div style="margin-top:8px;height:8px;background:#eee;border-radius:4px"><div style="height:100%;width:{{ bpct }}%;background:{% if bpct > 90 %}#c53030{% elif bpct > 70 %}#e8672a{% else %}#2e7d32{% endif %};border-radius:4px"></div></div>
+        <div style="font-size:10px;color:#888">{{ bpct }}%</div>
+    </div></div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+    <!-- Deadlines -->
+    <div class="card"><div class="card-header"><h3>🔔 Échéances proches</h3></div><div class="card-body" style="padding:0">
+    {% if deadlines %}{% for t in deadlines %}
+    <div style="padding:8px 14px;border-bottom:1px solid #f0f0f0;display:flex;gap:8px;align-items:center;font-size:12px">
+        <span style="font-weight:700;color:{% if t.due_date < today %}#c53030{% else %}#e8672a{% endif %}">{{ t.due_date }}</span>
+        <span style="flex:1">{{ t.title }}</span>
+        <span style="font-size:10px;color:#888">{{ t.project_name or '' }}</span>
+    </div>
+    {% endfor %}{% else %}<p style="text-align:center;color:#999;padding:20px;font-size:12px">Aucune échéance proche</p>{% endif %}
+    </div></div>
+    
+    <!-- Recent tasks -->
+    <div class="card"><div class="card-header"><h3>🕐 Dernières tâches</h3></div><div class="card-body" style="padding:0">
+    {% for t in recent %}
+    <div style="padding:8px 14px;border-bottom:1px solid #f0f0f0;font-size:12px">
+        <strong>{{ t.title }}</strong> <span style="font-size:10px;color:#888">· {{ t.project_name or '' }}</span>
+        <span class="badge-status {% if t.status=='termine' %}sent{% elif t.status=='en_cours' %}pending{% endif %}" style="font-size:9px;float:right">{{ t.status }}</span>
+    </div>
+    {% endfor %}
+    </div></div>
+</div>
+{% endblock %}

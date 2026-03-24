@@ -170,6 +170,18 @@
             </div>
             {% endif %}
             
+            {% if 'resp_projet' in permissions or 'admin' in permissions %}
+            <div class="nav-section" id="sec-resp-proj">
+                <div class="nav-section-title" onclick="toggleSection('sec-resp-proj')">📁 RESPONSABLE PROJET <span class="arrow">▼</span></div>
+                <div class="nav-section-items">
+                    <a href="/resp-projet" class="{% if page == 'resp_projet' %}active{% endif %}">📊 Tableau de bord</a>
+                    <a href="/resp-projet/projets" class="{% if page == 'resp_projets' %}active{% endif %}">📁 Projets</a>
+                    <a href="/kanban" class="{% if page == 'kanban' %}active{% endif %}">📋 Kanban</a>
+                    <a href="/resp-projet/planning" class="{% if page == 'resp_planning' %}active{% endif %}">📅 Planning</a>
+                </div>
+            </div>
+            {% endif %}
+            
             {% if 'fichiers' in permissions %}
             <!-- Gestion RH -->
             <div class="nav-section" id="sec-rh">

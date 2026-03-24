@@ -1,65 +1,155 @@
 {% extends "base.html" %}{% block title %}WannyGest - Bilan comptable{% endblock %}{% block content %}
 <style>@media print{.no-print{display:none!important}}</style>
-<div class="page-header no-print"><h1>📊 Bilan comptable mensuel</h1>
+<div class="page-header no-print"><h1>📊 Bilan comptable</h1>
 <div style="display:flex;gap:6px">
-<a href="/comptabilite/bilan/pdf?month={{ data.month }}" class="btn btn-sm btn-outline">📄 PDF</a>
-<button class="btn btn-sm btn-outline" onclick="window.print()">🖨️ Imprimer</button>
+<a href="/comptabilite/bilan/pdf?exercice={{ exercice }}&tab={{ tab }}" class="btn btn-outline btn-sm">📄 PDF</a>
+<button class="btn btn-outline btn-sm" onclick="window.print()">🖨️</button>
 <a href="/comptabilite" class="btn btn-outline btn-sm">← Comptabilité</a>
 </div></div>
 
-<div class="no-print" style="margin-bottom:14px"><form method="get" style="display:flex;gap:8px;align-items:center">
-<input type="month" name="month" value="{{ data.month }}" style="padding:6px 10px;border:1.5px solid #ddd;border-radius:8px">
-<button type="submit" class="btn btn-primary btn-sm">Afficher</button></form></div>
-
-<h3 style="text-align:center;color:#44546A;margin-bottom:16px">Bilan du mois : {{ data.month }}</h3>
-
-<!-- KPIs -->
-<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
-    <div class="card" style="text-align:center;padding:16px;border-left:4px solid #2e7d32"><div style="font-size:10px;color:#888">TOTAL ENTREES</div><div style="font-size:24px;font-weight:800;color:#2e7d32">{{ '{:,.0f}'.format(data.total_entrees) }} F</div></div>
-    <div class="card" style="text-align:center;padding:16px;border-left:4px solid #c53030"><div style="font-size:10px;color:#888">TOTAL SORTIES</div><div style="font-size:24px;font-weight:800;color:#c53030">{{ '{:,.0f}'.format(data.total_sorties) }} F</div></div>
-    <div class="card" style="text-align:center;padding:16px;border-left:4px solid {% if data.solde >= 0 %}#2e7d32{% else %}#c53030{% endif %}"><div style="font-size:10px;color:#888">SOLDE</div><div style="font-size:24px;font-weight:800;color:{% if data.solde >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(data.solde) }} F</div></div>
+<!-- Tabs -->
+<div class="no-print" style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+{% for key,label in [('mensuel','📅 Vue mensuelle'),('plan','📋 Plan comptable'),('ecritures','📝 Écritures'),('bilan_officiel','📊 Bilan SYSCOHADA')] %}
+<a href="/comptabilite/bilan?tab={{ key }}&exercice={{ exercice }}" class="btn {% if tab==key %}btn-primary{% else %}btn-outline{% endif %} btn-sm">{{ label }}</a>
+{% endfor %}
+<form method="get" style="margin-left:auto;display:flex;gap:4px;align-items:center"><input type="hidden" name="tab" value="{{ tab }}">
+{% if tab == 'mensuel' %}<input type="month" name="month" value="{{ data.month if data else '' }}" style="padding:4px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+{% else %}<input type="number" name="exercice" value="{{ exercice }}" min="2020" max="2030" style="padding:4px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;width:80px">{% endif %}
+<button type="submit" class="btn btn-outline btn-sm" style="padding:4px 8px">Filtrer</button></form>
 </div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-    <!-- Entrées -->
+{% if tab == 'mensuel' and data %}
+<!-- MONTHLY VIEW -->
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">
+    <div class="card" style="text-align:center;padding:14px;border-left:4px solid #2e7d32"><div style="font-size:10px;color:#888">ENTREES</div><div style="font-size:22px;font-weight:800;color:#2e7d32">{{ '{:,.0f}'.format(data.total_entrees) }} F</div></div>
+    <div class="card" style="text-align:center;padding:14px;border-left:4px solid #c53030"><div style="font-size:10px;color:#888">SORTIES</div><div style="font-size:22px;font-weight:800;color:#c53030">{{ '{:,.0f}'.format(data.total_sorties) }} F</div></div>
+    <div class="card" style="text-align:center;padding:14px;border-left:4px solid {% if data.solde >= 0 %}#2e7d32{% else %}#c53030{% endif %}"><div style="font-size:10px;color:#888">SOLDE</div><div style="font-size:22px;font-weight:800;color:{% if data.solde >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(data.solde) }} F</div></div>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
     <div class="card"><div class="card-header"><h3 style="color:#2e7d32">📈 Entrées</h3></div><div class="card-body">
     <table style="width:100%;font-size:12px">
-    <tr><td>Factures payées</td><td style="text-align:right;font-weight:600;color:#2e7d32">{{ '{:,.0f}'.format(data.factures_payees) }} F</td></tr>
-    <tr><td>Entrées de caisse</td><td style="text-align:right;font-weight:600;color:#2e7d32">{{ '{:,.0f}'.format(data.caisse_entrees) }} F</td></tr>
-    <tr><td>Recettes banque</td><td style="text-align:right;font-weight:600;color:#2e7d32">{{ '{:,.0f}'.format(data.treso_recettes) }} F</td></tr>
+    {% for label, val in [('Factures payées', data.factures_payees), ('Entrées caisse', data.caisse_entrees), ('Recettes banque', data.treso_recettes)] %}
+    <tr><td>{{ label }}</td><td style="text-align:right;font-weight:600;color:#2e7d32">{{ '{:,.0f}'.format(val) }} F</td></tr>
+    {% endfor %}
     <tr style="border-top:2px solid #2e7d32;font-weight:700"><td>TOTAL</td><td style="text-align:right;color:#2e7d32">{{ '{:,.0f}'.format(data.total_entrees) }} F</td></tr>
     </table></div></div>
-    
-    <!-- Sorties -->
     <div class="card"><div class="card-header"><h3 style="color:#c53030">📉 Sorties</h3></div><div class="card-body">
     <table style="width:100%;font-size:12px">
-    <tr><td>Sorties de caisse</td><td style="text-align:right;font-weight:600;color:#c53030">{{ '{:,.0f}'.format(data.caisse_sorties) }} F</td></tr>
-    <tr><td>Dépenses banque</td><td style="text-align:right;font-weight:600;color:#c53030">{{ '{:,.0f}'.format(data.treso_depenses) }} F</td></tr>
-    <tr><td>Pièces de caisse</td><td style="text-align:right;font-weight:600;color:#c53030">{{ '{:,.0f}'.format(data.depenses) }} F</td></tr>
+    {% for label, val in [('Sorties caisse', data.caisse_sorties), ('Dépenses banque', data.treso_depenses), ('Pièces de caisse', data.depenses)] %}
+    <tr><td>{{ label }}</td><td style="text-align:right;font-weight:600;color:#c53030">{{ '{:,.0f}'.format(val) }} F</td></tr>
+    {% endfor %}
     <tr style="border-top:2px solid #c53030;font-weight:700"><td>TOTAL</td><td style="text-align:right;color:#c53030">{{ '{:,.0f}'.format(data.total_sorties) }} F</td></tr>
     </table></div></div>
 </div>
-
-<!-- Soldes bancaires -->
 {% if data.banks %}
 <div class="card"><div class="card-header"><h3>🏦 Soldes bancaires</h3></div><div class="card-body" style="padding:0"><div class="table-wrap"><table>
-<thead><tr><th>Compte</th><th>Type</th><th>Sous-type</th><th style="text-align:right">Solde initial</th><th style="text-align:right">Solde actuel</th></tr></thead>
-<tbody>{% for b in data.banks %}<tr>
-<td><strong>{{ b.name }}</strong></td>
-<td>{{ b.type }}</td><td>{{ b.subtype or 'courant' }}</td>
-<td style="text-align:right">{{ '{:,.0f}'.format(b.initial_balance) }} F</td>
-<td style="text-align:right;font-weight:700;color:{% if b.current_balance >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(b.current_balance) }} F</td>
-</tr>{% endfor %}</tbody></table></div></div></div>
+<thead><tr><th>Compte</th><th>Type</th><th style="text-align:right">Solde</th></tr></thead>
+<tbody>{% for b in data.banks %}<tr><td><strong>{{ b.name }}</strong></td><td>{{ b.subtype or 'courant' }}</td>
+<td style="text-align:right;font-weight:700;color:{% if b.current_balance >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(b.current_balance) }} F</td></tr>{% endfor %}</tbody></table></div></div></div>
 {% endif %}
 
-<!-- Détail factures du mois -->
-{% if data.inv_list %}
-<div class="card" style="margin-top:14px"><div class="card-header"><h3>📋 Factures du mois ({{ data.inv_list|length }})</h3></div><div class="card-body" style="padding:0"><div class="table-wrap"><table>
-<thead><tr><th>Réf</th><th>Client</th><th>Objet</th><th style="text-align:right">Montant</th><th>Statut</th></tr></thead>
-<tbody>{% for i in data.inv_list %}<tr>
-<td><a href="/comptabilite/facture/view/{{ i.id }}">{{ i.reference }}</a></td><td>{{ i.client_name }}</td><td style="font-size:11px">{{ i.objet or '-' }}</td>
-<td style="text-align:right;font-weight:600">{{ '{:,.0f}'.format(i.amount) }} F</td>
-<td><span class="badge-status {% if i.status=='payee' %}sent{% else %}pending{% endif %}">{{ i.status }}</span></td>
+{% elif tab == 'plan' %}
+<!-- PLAN COMPTABLE -->
+<div class="card no-print" style="margin-bottom:12px"><div class="card-header"><h3>+ Ajouter un compte</h3></div><div class="card-body">
+<form method="post" action="/comptabilite/plan-comptable/add" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+    <div class="form-group" style="min-width:80px"><label>N° Compte</label><input type="text" name="numero" required placeholder="512"></div>
+    <div class="form-group" style="flex:1"><label>Libellé</label><input type="text" name="libelle" required placeholder="Banque"></div>
+    <div class="form-group"><label>Type</label><select name="type"><option value="actif">Actif</option><option value="passif">Passif</option></select></div>
+    <div class="form-group"><label>Catégorie</label><select name="categorie"><option value="immobilise">Immobilisé</option><option value="circulant">Circulant</option><option value="tresorerie">Trésorerie</option><option value="capitaux">Capitaux</option><option value="dettes_financieres">Dettes financières</option><option value="dettes_circulant">Dettes circulant</option><option value="charges">Charges</option><option value="produits">Produits</option></select></div>
+    <div class="form-group"><label>Classe</label><input type="text" name="classe" placeholder="1-7" style="width:50px"></div>
+    <button type="submit" class="btn btn-primary btn-sm">Ajouter</button>
+</form></div></div>
+
+<div class="card"><div class="card-header"><h3>📋 Plan comptable SYSCOHADA ({{ comptes|length }} comptes)</h3></div><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<thead><tr><th>N°</th><th>Libellé</th><th>Type</th><th>Catégorie</th><th>Classe</th></tr></thead>
+<tbody>{% for c in comptes %}<tr>
+<td><strong>{{ c.numero }}</strong></td><td>{{ c.libelle }}</td>
+<td><span class="badge-status {% if c.type=='actif' %}sent{% else %}pending{% endif %}">{{ c.type }}</span></td>
+<td style="font-size:11px">{{ c.categorie }}</td><td style="text-align:center">{{ c.classe }}</td>
 </tr>{% endfor %}</tbody></table></div></div></div>
+
+{% elif tab == 'ecritures' %}
+<!-- ECRITURES COMPTABLES -->
+<div class="card no-print" style="margin-bottom:12px"><div class="card-header"><h3>+ Nouvelle écriture</h3></div><div class="card-body">
+<form method="post" action="/comptabilite/ecritures/add" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+    <div class="form-group"><label>Date</label><input type="date" name="date" required></div>
+    <div class="form-group"><label>Journal</label><select name="journal"><option>OD</option><option>AC</option><option>VE</option><option>BQ</option><option>CA</option></select></div>
+    <div class="form-group"><label>Pièce</label><input type="text" name="piece" placeholder="FAC-001" style="width:90px"></div>
+    <div class="form-group"><label>Compte débit</label><select name="compte_debit">{% for c in comptes %}<option value="{{ c.numero }}">{{ c.numero }} - {{ c.libelle }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Compte crédit</label><select name="compte_credit">{% for c in comptes %}<option value="{{ c.numero }}">{{ c.numero }} - {{ c.libelle }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Libellé</label><input type="text" name="libelle" required placeholder="Description"></div>
+    <div class="form-group"><label>Montant</label><input type="number" name="montant" step="1" min="1" required></div>
+    <button type="submit" class="btn btn-primary btn-sm">Enregistrer</button>
+</form></div></div>
+
+<div class="card"><div class="card-header"><h3>📝 Écritures {{ exercice }} ({{ ecritures|length }})</h3></div><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<thead><tr><th>Date</th><th>Journal</th><th>Pièce</th><th>Débit</th><th>Crédit</th><th>Libellé</th><th style="text-align:right">Montant</th><th>Par</th></tr></thead>
+<tbody>{% for e in ecritures %}<tr>
+<td style="font-size:11px">{{ e.date }}</td><td style="text-align:center"><span class="badge-status">{{ e.journal }}</span></td>
+<td style="font-size:10px">{{ e.piece or '-' }}</td>
+<td style="font-size:11px;color:#1565c0">{{ e.compte_debit }}</td><td style="font-size:11px;color:#c53030">{{ e.compte_credit }}</td>
+<td>{{ e.libelle }}</td><td style="text-align:right;font-weight:600">{{ '{:,.0f}'.format(e.montant) }} F</td>
+<td style="font-size:10px;color:#888">{{ e.full_name or '-' }}</td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+
+{% elif tab == 'bilan_officiel' and bilan %}
+<!-- BILAN OFFICIEL SYSCOHADA -->
+<div style="text-align:center;margin-bottom:14px">
+<h2 style="color:#44546A;margin:0">BILAN — Exercice {{ exercice }}</h2>
+<p style="font-size:11px;color:#888">Conforme au Plan Comptable SYSCOHADA révisé</p>
+{% if bilan.equilibre %}<span class="badge-status sent" style="font-size:12px">✓ ÉQUILIBRE VÉRIFIÉ</span>{% else %}<span class="badge-status" style="font-size:12px;background:#fde8e8;color:#c53030">⚠ ÉCART DÉTECTÉ</span>{% endif %}
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+<!-- ACTIF -->
+<div class="card"><div class="card-header" style="background:#e3f2fd"><h3 style="color:#1565c0">ACTIF</h3></div><div class="card-body" style="padding:0"><div class="table-wrap"><table style="font-size:12px">
+<thead><tr style="background:#4472C4;color:#fff"><th>N°</th><th>Libellé</th><th style="text-align:right">Montant</th></tr></thead>
+<tbody>
+<tr style="background:#e3f2fd"><td colspan="3"><strong>Actif immobilisé</strong></td></tr>
+{% for c in bilan.actif_immob %}{% if c.solde > 0 %}<tr><td>{{ c.numero }}</td><td>{{ c.libelle }}</td><td style="text-align:right">{{ '{:,.0f}'.format(c.solde) }}</td></tr>{% endif %}{% endfor %}
+<tr style="background:#e3f2fd"><td colspan="3"><strong>Actif circulant</strong></td></tr>
+{% for c in bilan.actif_circ %}{% if c.solde > 0 %}<tr><td>{{ c.numero }}</td><td>{{ c.libelle }}</td><td style="text-align:right">{{ '{:,.0f}'.format(c.solde) }}</td></tr>{% endif %}{% endfor %}
+<tr style="background:#e3f2fd"><td colspan="3"><strong>Trésorerie actif</strong></td></tr>
+{% for c in bilan.actif_treso %}{% if c.solde > 0 %}<tr><td>{{ c.numero }}</td><td>{{ c.libelle }}</td><td style="text-align:right">{{ '{:,.0f}'.format(c.solde) }}</td></tr>{% endif %}{% endfor %}
+<tr style="background:#1565c0;color:#fff;font-weight:700"><td colspan="2">TOTAL ACTIF</td><td style="text-align:right">{{ '{:,.0f}'.format(bilan.t_actif) }} F</td></tr>
+</tbody></table></div></div></div>
+
+<!-- PASSIF -->
+<div class="card"><div class="card-header" style="background:#fde8e8"><h3 style="color:#c53030">PASSIF</h3></div><div class="card-body" style="padding:0"><div class="table-wrap"><table style="font-size:12px">
+<thead><tr style="background:#c53030;color:#fff"><th>N°</th><th>Libellé</th><th style="text-align:right">Montant</th></tr></thead>
+<tbody>
+<tr style="background:#fde8e8"><td colspan="3"><strong>Capitaux propres</strong></td></tr>
+{% for c in bilan.passif_cap %}{% if c.solde > 0 %}<tr><td>{{ c.numero }}</td><td>{{ c.libelle }}</td><td style="text-align:right">{{ '{:,.0f}'.format(c.solde) }}</td></tr>{% endif %}{% endfor %}
+<tr style="background:#fff3e0"><td></td><td><strong>Résultat de l'exercice</strong></td><td style="text-align:right;font-weight:700;color:{% if bilan.resultat >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(bilan.resultat) }}</td></tr>
+<tr style="background:#fde8e8"><td colspan="3"><strong>Dettes</strong></td></tr>
+{% for c in bilan.passif_dettes %}{% if c.solde > 0 %}<tr><td>{{ c.numero }}</td><td>{{ c.libelle }}</td><td style="text-align:right">{{ '{:,.0f}'.format(c.solde) }}</td></tr>{% endif %}{% endfor %}
+<tr style="background:#c53030;color:#fff;font-weight:700"><td colspan="2">TOTAL PASSIF</td><td style="text-align:right">{{ '{:,.0f}'.format(bilan.t_passif) }} F</td></tr>
+</tbody></table></div></div></div>
+</div>
+
+<!-- Résultat -->
+<div class="card" style="margin-bottom:12px"><div class="card-body">
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center">
+    <div><div style="font-size:10px;color:#888">Produits (classe 7)</div><div style="font-size:20px;font-weight:700;color:#2e7d32">{{ '{:,.0f}'.format(bilan.t_produits) }} F</div></div>
+    <div><div style="font-size:10px;color:#888">Charges (classe 6)</div><div style="font-size:20px;font-weight:700;color:#c53030">{{ '{:,.0f}'.format(bilan.t_charges) }} F</div></div>
+    <div><div style="font-size:10px;color:#888">Résultat net</div><div style="font-size:20px;font-weight:700;color:{% if bilan.resultat >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(bilan.resultat) }} F</div></div>
+</div></div></div>
+
+<!-- Générer bilan officiel -->
+<div class="card no-print"><div class="card-body" style="display:flex;gap:10px;align-items:center">
+<form method="post" action="/comptabilite/bilan/generer"><input type="hidden" name="exercice" value="{{ exercice }}">
+<button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('Générer et archiver le bilan officiel pour l exercice {{ exercice }} ?')">📊 Générer le bilan officiel {{ exercice }}</button></form>
+<span style="font-size:11px;color:#888">Ce document pourra être déposé aux impôts en fin d'exercice comptable.</span>
+</div></div>
+{% if bilan.bilans_hist %}
+<div class="card" style="margin-top:10px"><div class="card-header"><h3>📁 Bilans archivés</h3></div><div class="card-body" style="padding:0"><div class="table-wrap"><table>
+<thead><tr><th>Exercice</th><th>Clôture</th><th style="text-align:right">Actif</th><th style="text-align:right">Passif</th><th style="text-align:right">Résultat</th><th>Statut</th></tr></thead>
+<tbody>{% for b in bilan.bilans_hist %}<tr>
+<td><strong>{{ b.exercice }}</strong></td><td>{{ b.date_cloture }}</td>
+<td style="text-align:right">{{ '{:,.0f}'.format(b.total_actif) }}</td><td style="text-align:right">{{ '{:,.0f}'.format(b.total_passif) }}</td>
+<td style="text-align:right;font-weight:700;color:{% if b.resultat >= 0 %}#2e7d32{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(b.resultat) }}</td>
+<td><span class="badge-status {% if b.status=='valide' %}sent{% else %}pending{% endif %}">{{ b.status }}</span></td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% endif %}
 {% endif %}
 {% endblock %}
