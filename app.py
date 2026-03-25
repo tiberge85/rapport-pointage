@@ -20,7 +20,7 @@ from flask import (Flask, render_template, request, send_file, flash,
 from werkzeug.utils import secure_filename
 
 from rapport_core import extract_from_excel, generate_full_pdf
-from rapport_core import generate_presence_xlsx
+from merge_presence import generate_presence_xlsx
 from models import (init_db, create_user, authenticate_user, get_user_by_id,
                     get_all_users, update_user, delete_user,
                     create_client, get_all_clients, get_client_by_id,
@@ -44,7 +44,7 @@ from models import (init_db, create_user, authenticate_user, get_user_by_id,
                     update_devis_status, get_devis_stats)
 from devis_generator import generate_devis_pdf
 
-app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'), static_folder=BASE_DIR, static_url_path='/static')
+app = Flask(__name__, template_folder=BASE_DIR, static_folder=BASE_DIR, static_url_path='/static')
 app.secret_key = os.environ.get('SECRET_KEY', 'ramya-tech-2026-secret-v3')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 PERSISTENT_DIR = os.environ.get('PERSISTENT_DIR', BASE_DIR)
@@ -113,8 +113,6 @@ from models import migrate_v19
 migrate_v19()
 from models import migrate_v20
 migrate_v20()
-from models import migrate_v21
-migrate_v21()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -127,8 +125,6 @@ from models import migrate_v19
 migrate_v19()
 from models import migrate_v20
 migrate_v20()
-from models import migrate_v21
-migrate_v21()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -1056,7 +1052,7 @@ def contrats_delete(cid):
 # ======================== COMPARAISON MENSUELLE ========================
 
 @app.route('/comparaison')
-@permission_required('traitement')
+@login_required
 def comparaison_page():
     stats = get_client_monthly_stats()
     # Collect all months
@@ -1070,7 +1066,7 @@ def comparaison_page():
 # ======================== ALERTES ========================
 
 @app.route('/alertes')
-@permission_required('traitement')
+@login_required
 def alertes_page():
     # Analyser les derniers rapports pour trouver les alertes
     jobs = get_all_jobs()
@@ -2125,7 +2121,7 @@ def rapport_caisse_edit(rid):
     
     conn.close()
     report['items'] = json.loads(report.get('items_json','[]') or '[]')
-    return render_template('rapport_caisse_new.html', page='comptabilite', report=report, report_items=report['items'])
+    return render_template('rapport_caisse_edit.html', page='comptabilite', report=report, report_items=report['items'])
 
 @app.route('/comptabilite/rapport-caisse/pdf/<int:rid>')
 @permission_required('comptabilite')
@@ -2303,7 +2299,7 @@ def visites_new():
     return render_template('visite_new.html', page='visites', clients=clients)
 
 @app.route('/visites/<int:vid>')
-@permission_required('visites')
+@login_required
 def visite_detail(vid):
     visit = get_visit_by_id(vid)
     if not visit:
@@ -2466,10 +2462,10 @@ def devis_new():
     clients = get_all_clients()
     from models import db_get_all
     stock_items = db_get_all('stock_items', order='name ASC')
-    return render_template('devis_edit.html', page='devis', clients=clients, stock_items=stock_items)
+    return render_template('devis_new.html', page='devis', clients=clients, stock_items=stock_items)
 
 @app.route('/devis/pdf/<int:did>')
-@permission_required('proforma')
+@login_required
 def devis_pdf(did):
     devis = get_devis_by_id(did)
     if not devis:
@@ -2576,7 +2572,7 @@ def devis_duplicate(did):
     return redirect(url_for('devis_page'))
 
 @app.route('/devis/preview/<int:did>')
-@permission_required('proforma')
+@login_required
 def devis_preview(did):
     devis = get_devis_by_id(did)
     if not devis: return "Non trouvé", 404
@@ -2653,53 +2649,29 @@ def rh_personnel_edit(eid):
         flash("Employé non trouvé", "error")
         return redirect(url_for('rh_personnel'))
     if request.method == 'POST':
-        try:
-            fields = {}
-            for key in ['first_name','last_name','matricule','email','tel','position','department',
-                         'hire_date','contract_type','insurance','insurance_number',
-                         'emergency_contact','emergency_tel','code_rh','birth_date','gender','blood_type',
-                         'birth_place','birth_city','civil_status','nationality','religion',
-                         'id_type','id_expiry','id_place','resident','address','education_level',
-                         'work_location','bank_account','bank_name_emp','bank_holder',
-                         'fiscal_code','hourly_rate','facebook','linkedin','skype',
-                         'direction','email_signature','other_info','status']:
-                fields[key] = request.form.get(key, '')
-            fields['salary'] = float(request.form.get('salary', 0) or 0)
-            # Convert empty unique fields to None
-            for uf in ['matricule', 'email']:
-                if not fields.get(uf): fields[uf] = None
-            update_employee(eid, **fields)
-            # Photo
-            if 'photo' in request.files and request.files['photo'].filename:
-                photo = request.files['photo']
-                from werkzeug.utils import secure_filename as _sf
-                fname = f"emp_{eid}_{_sf(photo.filename)}"
-                photo_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'photos')
-                os.makedirs(photo_dir, exist_ok=True)
-                photo.save(os.path.join(photo_dir, fname))
-                update_employee(eid, photo=fname)
-            flash("Employé modifié", "success")
-        except Exception as e:
-            flash(f"Erreur: {str(e)}", "error")
+        fields = {}
+        for key in ['first_name','last_name','matricule','email','tel','position','department',
+                     'hire_date','contract_type','insurance','insurance_number',
+                     'emergency_contact','emergency_tel','code_rh','birth_date','gender','blood_type',
+                     'birth_place','birth_city','civil_status','nationality','religion',
+                     'id_type','id_expiry','id_place','resident','address','education_level',
+                     'work_location','bank_account','bank_name_emp','bank_holder',
+                     'fiscal_code','hourly_rate','facebook','linkedin','skype',
+                     'direction','email_signature','other_info','status']:
+            fields[key] = request.form.get(key, '')
+        fields['salary'] = float(request.form.get('salary', 0) or 0)
+        update_employee(eid, **fields)
+        # Photo
+        if 'photo' in request.files and request.files['photo'].filename:
+            photo = request.files['photo']
+            fname = f"emp_{eid}_{secure_filename(photo.filename)}"
+            photo_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'photos')
+            os.makedirs(photo_dir, exist_ok=True)
+            photo.save(os.path.join(photo_dir, fname))
+            update_employee(eid, photo=fname)
+        flash("Employé modifié", "success")
         return redirect(url_for('rh_personnel'))
     return render_template('rh_personnel_edit.html', page='personnel', emp=emp)
-
-@app.route('/rh/personnel/delete/<int:eid>')
-@permission_required('fichiers')
-def rh_personnel_delete(eid):
-    conn = _gdb()
-    emp = conn.execute("SELECT first_name, last_name FROM employees WHERE id=?", (eid,)).fetchone()
-    if emp:
-        conn.execute("DELETE FROM employees WHERE id=?", (eid,))
-        conn.commit()
-        user = get_user_by_id(session['user_id'])
-        log_activity(session['user_id'], user['full_name'] if user else '?', 'RH',
-                    f"Employé supprimé: {emp['first_name']} {emp['last_name']}", request.remote_addr)
-        flash("Employé supprimé", "success")
-    else:
-        flash("Employé non trouvé", "error")
-    conn.close()
-    return redirect(url_for('rh_personnel'))
 
 @app.route('/rh/conges')
 @permission_required('fichiers')
@@ -2796,7 +2768,7 @@ def rh_paie_edit(pid):
         flash(f"Bulletin modifié — Net: {net:,.0f} FCFA", "success")
         return redirect(url_for('rh_paie_view', pid=pid))
     employees = get_all_employees()
-    return render_template('rh_paie_view.html', page='paie', p=p, employees=employees)
+    return render_template('rh_paie_edit.html', page='paie', p=p, employees=employees)
 
 @app.route('/rh/paie/<int:pid>/pdf')
 @permission_required('fichiers')
@@ -2981,7 +2953,7 @@ def clients_import():
 # ======================== CENTRE TECHNIQUE ========================
 
 @app.route('/centre-technique')
-@permission_required('centre_technique')
+@login_required
 def tech_center():
     from models import db_get_all, db_insert, db_update
     systems = db_get_all('tech_center', order='next_maintenance ASC')
@@ -3004,7 +2976,7 @@ def tech_center_add():
     return redirect(url_for('tech_center'))
 
 @app.route('/centre-technique/view/<int:sid>')
-@permission_required('centre_technique')
+@login_required
 def tech_center_view(sid):
     from models import db_get_by_id
     system = db_get_by_id('tech_center', sid)
@@ -3309,173 +3281,58 @@ def rh_organigramme():
 # ======================== CHAT ========================
 
 @app.route('/chat')
-@permission_required('chat')
+@login_required
 def chat_page():
     channel = request.args.get('channel', 'general')
     dm_user = request.args.get('dm')
     users = get_all_users()
-    conn = _gdb()
-    channels = [dict(r) for r in conn.execute("SELECT * FROM chat_channels ORDER BY name").fetchall()]
-    
-    # Recent DM contacts with last message
-    dm_contacts = [dict(r) for r in conn.execute("""
-        SELECT DISTINCT CASE WHEN m.sender_id=? THEN m.receiver_id ELSE m.sender_id END as uid,
-            u.full_name, MAX(m.created_at) as last_msg,
-            (SELECT content FROM messages WHERE 
-                ((sender_id=? AND receiver_id=u.id) OR (sender_id=u.id AND receiver_id=?))
-                ORDER BY created_at DESC LIMIT 1) as last_content,
-            (SELECT COUNT(*) FROM messages WHERE sender_id=u.id AND receiver_id=? AND read=0) as unread
-        FROM messages m
-        JOIN users u ON u.id = CASE WHEN m.sender_id=? THEN m.receiver_id ELSE m.sender_id END
-        WHERE (m.sender_id=? OR m.receiver_id=?) AND m.channel='direct'
-        GROUP BY uid ORDER BY last_msg DESC
-    """, (session['user_id'],)*7).fetchall()]
-    
     if dm_user:
         msgs = get_direct_messages(session['user_id'], int(dm_user))
         target = get_user_by_id(int(dm_user))
         mark_chat_read(session['user_id'], '_dm_all')
-        # Mark messages as read
-        conn.execute("UPDATE messages SET status='read' WHERE sender_id=? AND receiver_id=? AND status!='read'",
-            (int(dm_user), session['user_id']))
-        conn.commit()
-    else:
-        msgs = get_messages(channel)
-        target = None
-        mark_chat_read(session['user_id'], channel)
-    
-    conn.close()
+        return render_template('chat.html', page='chat', messages=msgs, users=users,
+                              channel=f'dm_{dm_user}', dm_target=target)
+    msgs = get_messages(channel)
+    mark_chat_read(session['user_id'], channel)
     return render_template('chat.html', page='chat', messages=msgs, users=users,
-        channel=channel, dm_target=target, channels=channels, dm_contacts=dm_contacts)
+                          channel=channel, dm_target=None)
 
 @app.route('/chat/send', methods=['POST'])
-@permission_required('chat')
+@login_required
 def chat_send():
     content = request.form.get('content', '').strip()
     channel = request.form.get('channel', 'general')
-    msg_type = request.form.get('message_type', 'text')
     dm_id = None
     if channel.startswith('dm_'):
         dm_id = int(channel.split('_')[1])
-    
-    # Handle file upload
-    file_url = ''
-    file_name = ''
-    if 'file' in request.files and request.files['file'].filename:
-        f = request.files['file']
-        from werkzeug.utils import secure_filename as _sf
-        fname = f"{int(datetime.now().timestamp())}_{_sf(f.filename)}"
-        fdir = os.path.join(app.config['UPLOAD_FOLDER'], 'chat_files')
-        os.makedirs(fdir, exist_ok=True)
-        f.save(os.path.join(fdir, fname))
-        file_url = f'/uploads/chat_files/{fname}'
-        file_name = f.filename
-        msg_type = 'file'
-        if not content: content = f'📎 {f.filename}'
-    
-    if content or file_url:
-        conn = _gdb()
+    if content:
         if dm_id:
-            conn.execute("""INSERT INTO messages (sender_id, receiver_id, channel, content, message_type, file_url, file_name, status)
-                VALUES (?,?,'direct',?,?,?,?,'sent')""",
-                (session['user_id'], dm_id, content, msg_type, file_url, file_name))
+            send_message(session['user_id'], content, 'direct', dm_id)
         else:
-            conn.execute("""INSERT INTO messages (sender_id, channel, content, message_type, file_url, file_name, status)
-                VALUES (?,?,?,?,?,?,'sent')""",
-                (session['user_id'], channel, content, msg_type, file_url, file_name))
-        conn.commit(); conn.close()
-    
-    if dm_id: return redirect(f'/chat?dm={dm_id}')
+            send_message(session['user_id'], content, channel, None)
+    if dm_id:
+        return redirect(f'/chat?dm={dm_id}')
     return redirect(f'/chat?channel={channel}')
-
-@app.route('/chat/api')
-@login_required
-def chat_api():
-    channel = request.args.get('channel', 'general')
-    dm_user = request.args.get('dm')
-    after_id = int(request.args.get('after', 0) or 0)
-    conn = _gdb()
-    if dm_user:
-        uid = int(dm_user)
-        msgs = [dict(r) for r in conn.execute("""SELECT m.*, u.full_name as sender_name FROM messages m
-            LEFT JOIN users u ON m.sender_id=u.id
-            WHERE m.channel='direct' AND ((m.sender_id=? AND m.receiver_id=?) OR (m.sender_id=? AND m.receiver_id=?))
-            AND m.id > ? ORDER BY m.created_at""",
-            (session['user_id'], uid, uid, session['user_id'], after_id)).fetchall()]
-        # Mark as read
-        conn.execute("UPDATE messages SET status='read' WHERE sender_id=? AND receiver_id=? AND status!='read'",
-            (uid, session['user_id']))
-        conn.commit()
-    else:
-        msgs = [dict(r) for r in conn.execute("""SELECT m.*, u.full_name as sender_name FROM messages m
-            LEFT JOIN users u ON m.sender_id=u.id
-            WHERE m.channel=? AND m.id > ? ORDER BY m.created_at""",
-            (channel, after_id)).fetchall()]
-    
-    # Typing indicators
-    typing_users = [dict(r) for r in conn.execute("""SELECT u.full_name FROM chat_typing ct
-        JOIN users u ON ct.user_id=u.id
-        WHERE ct.channel=? AND ct.user_id!=? AND ct.updated_at > datetime('now', '-5 seconds')""",
-        (channel if not dm_user else f'dm_{dm_user}', session['user_id'])).fetchall()]
-    
-    conn.close()
-    return jsonify({
-        'messages': [{'id': m['id'], 'sender': m.get('sender_name','?'), 'sender_id': m['sender_id'],
-                      'content': m['content'], 'time': (m['created_at'] or '')[-8:-3],
-                      'type': m.get('message_type','text'), 'file_url': m.get('file_url',''),
-                      'file_name': m.get('file_name',''), 'status': m.get('status','sent')} for m in msgs],
-        'typing': [t['full_name'] for t in typing_users]
-    })
-
-@app.route('/chat/typing', methods=['POST'])
-@login_required
-def chat_typing():
-    channel = request.form.get('channel', 'general')
-    conn = _gdb()
-    conn.execute("DELETE FROM chat_typing WHERE user_id=? AND channel=?", (session['user_id'], channel))
-    conn.execute("INSERT INTO chat_typing (user_id, channel, updated_at) VALUES (?,?,datetime('now'))",
-        (session['user_id'], channel))
-    conn.commit(); conn.close()
-    return jsonify({'ok': True})
 
 @app.route('/chat/unread')
 @login_required
 def chat_unread_api():
+    """API: nombre de messages non lus."""
     count = get_unread_count(session['user_id'])
     return jsonify({'unread': count})
 
-@app.route('/chat/ticket', methods=['POST'])
-@permission_required('chat')
-def chat_create_ticket():
-    msg_id = int(request.form.get('message_id', 0) or 0)
-    title = request.form.get('title', 'Ticket depuis chat')
-    conn = _gdb()
-    conn.execute("INSERT INTO chat_tickets (message_id, title, created_by, status, priority) VALUES (?,?,?,'ouvert','normal')",
-        (msg_id, title, session['user_id']))
-    conn.commit(); conn.close()
-    flash("Ticket créé depuis le chat", "success")
-    return redirect('/chat')
-
-@app.route('/chat/supervision')
-@permission_required('admin')
-def chat_supervision():
-    conn = _gdb()
-    stats = {
-        'total_messages': conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0],
-        'today': conn.execute("SELECT COUNT(*) FROM messages WHERE date(created_at)=date('now')").fetchone()[0],
-        'active_users': conn.execute("SELECT COUNT(DISTINCT sender_id) FROM messages WHERE created_at > datetime('now','-24 hours')").fetchone()[0],
-        'unread_total': conn.execute("SELECT COUNT(*) FROM messages WHERE read=0").fetchone()[0],
-    }
-    recent = [dict(r) for r in conn.execute("""SELECT m.*, u.full_name as sender_name FROM messages m
-        LEFT JOIN users u ON m.sender_id=u.id ORDER BY m.created_at DESC LIMIT 30""").fetchall()]
-    user_stats = [dict(r) for r in conn.execute("""SELECT u.full_name, COUNT(m.id) as msg_count,
-        MAX(m.created_at) as last_active FROM messages m LEFT JOIN users u ON m.sender_id=u.id
-        GROUP BY m.sender_id ORDER BY msg_count DESC""").fetchall()]
-    tickets = [dict(r) for r in conn.execute("""SELECT t.*, u.full_name as creator FROM chat_tickets t
-        LEFT JOIN users u ON t.created_by=u.id ORDER BY t.created_at DESC LIMIT 20""").fetchall()]
-    conn.close()
-    return render_template('chat_supervision.html', page='chat', stats=stats,
-        recent=recent, user_stats=user_stats, tickets=tickets)
+@app.route('/chat/api')
+@login_required
+def chat_api():
+    """API pour rafraîchir les messages (polling)."""
+    channel = request.args.get('channel', 'general')
+    dm_user = request.args.get('dm')
+    if dm_user:
+        msgs = get_direct_messages(session['user_id'], int(dm_user))
+    else:
+        msgs = get_messages(channel)
+    return jsonify([{'id': m['id'], 'sender': m['sender_name'], 'sender_id': m['sender_id'],
+                     'content': m['content'], 'time': m['created_at'][11:16]} for m in msgs])
 
 
 # ======================== APPELS AUDIO/VIDEO ========================
@@ -3725,21 +3582,7 @@ def tracking_vehicule_edit(vid):
         conn.commit(); conn.close()
         flash("Véhicule modifié","success"); return redirect('/tracking/vehicules')
     conn.close()
-    return render_template('tracking_vehicule_view.html', page='tracking_vehicules', vehicle=dict(v))
-
-@app.route('/tracking/vehicules/delete/<int:vid>')
-@permission_required('tracking')
-def tracking_vehicule_delete(vid):
-    conn = _gdb()
-    v = conn.execute("SELECT immatriculation FROM tracking_vehicles WHERE id=?", (vid,)).fetchone()
-    if v:
-        conn.execute("DELETE FROM tracking_history WHERE vehicle_id=?", (vid,))
-        conn.execute("DELETE FROM tracking_alerts WHERE vehicle_id=?", (vid,))
-        conn.execute("DELETE FROM tracking_vehicles WHERE id=?", (vid,))
-        conn.commit()
-        flash(f"Véhicule {v['immatriculation']} supprimé", "success")
-    conn.close()
-    return redirect('/tracking/vehicules')
+    return render_template('tracking_vehicule_edit.html', page='tracking_vehicules', vehicle=dict(v))
 
 @app.route('/tracking/vehicules/view/<int:vid>')
 @permission_required('tracking')
@@ -3908,7 +3751,7 @@ def it_securite():
 # ======================== KANBAN ========================
 
 @app.route('/kanban')
-@permission_required('resp_projet')
+@login_required
 def kanban():
     from models import db_get_all, get_all_users, get_db
     user = get_user_by_id(session['user_id'])
@@ -4253,7 +4096,7 @@ def caisse_edit(sid):
         conn.commit(); conn.close()
         flash("Sortie de caisse modifiée", "success")
         return redirect(url_for('caisse_sortie'))
-    return render_template('caisse_preview.html', page='caisse_sortie', s=dict(s))
+    return render_template('caisse_edit.html', page='caisse_sortie', s=dict(s))
 
 @app.route('/caisse-sortie/<int:sid>/preview')
 @login_required
