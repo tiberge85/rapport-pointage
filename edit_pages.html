@@ -1,0 +1,94 @@
+{% extends "base.html" %}{% block title %}WannyGest{% endblock %}{% block content %}
+{% if page == 'clients' and client %}
+<div class="page-header"><h1>✏️ Modifier : {{ client.name }}</h1></div>
+<div class="card" style="max-width:650px">
+    <div class="card-body">
+        <form method="post">
+            <h4 style="font-size:12px;color:#1a7a6d;margin:4px 0 6px;border-bottom:1px solid #1a7a6d;padding-bottom:3px">🏢 Entreprise</h4>
+            <div class="form-group"><label>Nom de l'entreprise *</label><input type="text" name="name" value="{{ client.name }}" required></div>
+            <div class="form-row">
+                <div class="form-group"><label>Secteur d'activité</label><input type="text" name="sector" value="{{ client.sector or '' }}"></div>
+                <div class="form-group"><label>Ville</label><input type="text" name="city" value="{{ client.city or '' }}"></div>
+                <div class="form-group"><label>Pays</label><input type="text" name="country" value="{{ client.country or 'Côte d\'Ivoire' }}"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Adresse</label><input type="text" name="address" value="{{ client.address or '' }}"></div>
+                <div class="form-group"><label>Site web</label><input type="text" name="website" value="{{ client.website or '' }}"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>N° Registre Commerce</label><input type="text" name="rc_number" value="{{ client.rc_number or '' }}"></div>
+                <div class="form-group"><label>N° CNPS</label><input type="text" name="cnps_number" value="{{ client.cnps_number or '' }}"></div>
+            </div>
+
+            <h4 style="font-size:12px;color:#e8672a;margin:10px 0 6px;border-bottom:1px solid #e8672a;padding-bottom:3px">👤 Contact principal</h4>
+            <div class="form-row">
+                <div class="form-group"><label>Titre</label><select name="contact_title"><option value="">—</option><option {% if client.contact_title=='M.' %}selected{% endif %}>M.</option><option {% if client.contact_title=='Mme' %}selected{% endif %}>Mme</option><option {% if client.contact_title=='Dr' %}selected{% endif %}>Dr</option><option {% if client.contact_title=='Ing.' %}selected{% endif %}>Ing.</option></select></div>
+                <div class="form-group"><label>Nom du contact</label><input type="text" name="contact_name" value="{{ client.contact_name or '' }}"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Téléphone 1</label><input type="text" name="tel" value="{{ client.tel or '' }}"></div>
+                <div class="form-group"><label>Téléphone 2</label><input type="text" name="contact_tel2" value="{{ client.contact_tel2 or '' }}"></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Email principal</label><input type="email" name="email" value="{{ client.email or '' }}"></div>
+                <div class="form-group"><label>Email secondaire</label><input type="email" name="contact_email2" value="{{ client.contact_email2 or '' }}"></div>
+            </div>
+
+            <h4 style="font-size:12px;color:#B8860B;margin:10px 0 6px;border-bottom:1px solid #B8860B;padding-bottom:3px">💼 Commercial</h4>
+            <div class="form-row">
+                <div class="form-group"><label>Source</label><select name="source"><option value="">—</option>{% for s in ['prospect','recommandation','salon','site_web','appel','partenaire'] %}<option {% if client.source==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
+                <div class="form-group"><label>Statut</label><select name="status"><option {% if client.status=='actif' %}selected{% endif %}>actif</option><option {% if client.status=='inactif' %}selected{% endif %}>inactif</option><option {% if client.status=='vip' %}selected{% endif %}>vip</option></select></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>Conditions paiement</label><select name="payment_terms"><option value="">—</option>{% for p in ['comptant','30 jours','60 jours','90 jours'] %}<option {% if client.payment_terms==p %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></div>
+                <div class="form-group"><label>Encours max (F)</label><input type="number" name="credit_limit" step="1" value="{{ client.credit_limit or 0 }}"></div>
+            </div>
+            <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:9px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:14px">{{ client.notes or '' }}</textarea></div>
+            <div style="display:flex;gap:10px"><a href="/clients" class="btn btn-outline">Annuler</a><button type="submit" class="btn btn-primary">💾 Sauvegarder</button></div>
+        </form>
+    </div>
+</div>
+{% elif page == 'contrats' and contract %}
+<div class="page-header"><h1>✏️ Modifier le contrat</h1></div>
+<div class="card" style="max-width:550px"><div class="card-body">
+    <form method="post">
+        <div class="form-group"><label>Client</label>
+            <select name="client_id" required>{% for c in clients %}<option value="{{ c.id }}" {% if c.id == contract.client_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></div>
+        <div class="form-row">
+            <div class="form-group"><label>Référence</label><input type="text" name="reference" value="{{ contract.reference or '' }}"></div>
+            <div class="form-group"><label>Tarif mensuel (FCFA)</label><input type="number" name="monthly_rate" step="1" value="{{ contract.monthly_rate or 0 }}"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>Début</label><input type="date" name="start_date" value="{{ contract.start_date or '' }}"></div>
+            <div class="form-group"><label>Fin</label><input type="date" name="end_date" value="{{ contract.end_date or '' }}"></div>
+        </div>
+        <div class="form-group"><label>Statut</label>
+            <select name="status">
+                {% for s in ['actif','expire','suspendu','termine'] %}<option value="{{ s }}" {% if contract.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+            </select></div>
+        <div class="form-group"><label>Description</label><textarea name="description" rows="2" style="width:100%;padding:9px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:14px">{{ contract.description or '' }}</textarea></div>
+        <div style="display:flex;gap:10px"><a href="/contrats" class="btn btn-outline">Annuler</a><button type="submit" class="btn btn-primary">💾 Sauvegarder</button></div>
+    </form>
+</div></div>
+{% elif page == 'admin' and edit_user %}
+<div class="page-header">
+    <h1>✏️ Modifier l'utilisateur</h1>
+    <p>{{ edit_user.full_name }} ({{ edit_user.username }})</p>
+</div>
+<div class="card" style="max-width:500px">
+    <div class="card-body">
+        <form method="post">
+            <div class="form-group"><label>Nom complet</label><input type="text" name="full_name" value="{{ edit_user.full_name }}" required></div>
+            <div class="form-group"><label>Email</label><input type="email" name="email" value="{{ edit_user.email }}" required></div>
+            <div class="form-group"><label>Rôle</label>
+                <select name="role">
+                    {% for r in ['technicien','rh','commercial','comptable','moyens_generaux','informatique','admin'] %}<option value="{{ r }}" {% if edit_user.role == r %}selected{% endif %}>{{ r }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="form-group"><label>Nouveau mot de passe (laisser vide pour ne pas changer)</label><input type="password" name="password" minlength="6"></div>
+            <div style="display:flex;gap:10px"><a href="/admin" class="btn btn-outline">Annuler</a><button type="submit" class="btn btn-primary">💾 Sauvegarder</button></div>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

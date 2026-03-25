@@ -17,6 +17,7 @@
 <td style="white-space:nowrap">
     <a href="/tracking/vehicules/view/{{ v.id }}" class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 6px">👁️</a>
     <a href="/tracking/vehicules/edit/{{ v.id }}" class="btn btn-outline btn-sm" style="font-size:10px;padding:2px 6px">✏️</a>
+    <a href="/tracking/vehicules/delete/{{ v.id }}" class="btn btn-sm" style="font-size:10px;padding:2px 6px;color:#c53030" onclick="return confirm('Supprimer ce véhicule ?')">🗑️</a>
 </td>
 </tr>{% endfor %}</tbody></table></div></div></div>
 {% else %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:40px">Aucun véhicule. Ajoutez votre premier véhicule avec balise GPS.</div></div>{% endif %}

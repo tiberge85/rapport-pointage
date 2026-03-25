@@ -2339,3 +2339,55 @@ def migrate_v20():
         );
     ''')
     conn.commit(); conn.close()
+
+def migrate_v21():
+    conn = get_db()
+    # Enhanced messages
+    for col, default in [('message_type', 'text'), ('file_url', ''), ('file_name', ''),
+                         ('status', 'sent'), ('reply_to', ''), ('edited', '0'),
+                         ('is_system', '0'), ('reactions', '')]:
+        try: conn.execute(f"ALTER TABLE messages ADD COLUMN {col} TEXT DEFAULT '{default}'")
+        except: pass
+    
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS chat_channels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, description TEXT,
+            type TEXT DEFAULT 'group',
+            created_by INTEGER, avatar TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS chat_channel_members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id INTEGER, user_id INTEGER,
+            role TEXT DEFAULT 'member',
+            joined_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(channel_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS chat_typing (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER, channel TEXT, updated_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS chat_tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER, title TEXT,
+            status TEXT DEFAULT 'ouvert',
+            assigned_to INTEGER, priority TEXT DEFAULT 'normal',
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS chat_auto_responses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trigger_word TEXT, response TEXT,
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    
+    # Default channels
+    try:
+        conn.execute("INSERT OR IGNORE INTO chat_channels (id, name, description, type) VALUES (1, 'Général', 'Canal principal', 'group')")
+        conn.execute("INSERT OR IGNORE INTO chat_channels (id, name, description, type) VALUES (2, 'Technique', 'Équipe technique', 'group')")
+        conn.execute("INSERT OR IGNORE INTO chat_channels (id, name, description, type) VALUES (3, 'Commercial', 'Équipe commerciale', 'group')")
+    except: pass
+    
+    conn.commit(); conn.close()

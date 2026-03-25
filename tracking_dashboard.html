@@ -25,7 +25,11 @@
     </div>
 </a>
 {% endfor %}
-{% if not vehicles %}<p style="text-align:center;color:#999;padding:20px">Aucun véhicule enregistré</p>{% endif %}
+{% if not vehicles %}<p style="text-align:center;color:#999;padding:20px">Aucun véhicule. <a href="/tracking/vehicules" style="color:#1a7a6d">Ajouter un véhicule →</a></p>{% endif %}
+{% if vehicles and not en_mouvement %}
+<div style="padding:10px;background:#fff3e0;border-radius:8px;margin-top:8px;font-size:11px;color:#e8672a">
+📡 En attente de positions GPS. Configurez vos balises pour envoyer vers <code>POST /tracking/position/update</code>
+</div>{% endif %}
 </div></div>
 
 <!-- Alertes -->

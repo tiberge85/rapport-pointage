@@ -362,7 +362,7 @@ def tresorerie_transfer_add():
 @login_required
 def calendrier():
     events = db_get_all('calendar_events', order='start_date ASC', limit=50)
-    return render_template('mod_calendrier.html', page='calendrier', events=events)
+    return render_template('mod_utils.html', page='calendrier', events=events)
 
 @modules_bp.route('/calendrier/add', methods=['POST'])
 @login_required
@@ -429,7 +429,7 @@ def depenses_approve(eid):
 @login_required
 def todos():
     user_todos = db_get_all('user_todos', where={'user_id': session['user_id']}, order='done ASC, due_date ASC')
-    return render_template('mod_todos.html', page='todos', todos=user_todos)
+    return render_template('mod_utils.html', page='todos', todos=user_todos)
 
 @modules_bp.route('/todos/add', methods=['POST'])
 @login_required
@@ -473,7 +473,7 @@ def mg_vehicules():
             status=request.form.get('status','disponible'))
         flash("Véhicule ajouté", "success"); return redirect(url_for('modules.mg_vehicules'))
     items = db_get_all('mg_vehicules')
-    return render_template('mod_vehicules.html', page='vehicules', items=items)
+    return render_template('mod_mg_sub.html', page='vehicules', items=items)
 
 @modules_bp.route('/moyens-generaux/fournitures', methods=['GET', 'POST'])
 @login_required
@@ -484,7 +484,7 @@ def mg_fournitures():
             min_stock=int(request.form.get('min_stock',0) or 0))
         flash("Fourniture ajoutée", "success"); return redirect(url_for('modules.mg_fournitures'))
     items = db_get_all('mg_fournitures')
-    return render_template('mod_fournitures.html', page='fournitures', items=items)
+    return render_template('mod_mg_sub.html', page='fournitures', items=items)
 
 @modules_bp.route('/moyens-generaux/maintenance', methods=['GET', 'POST'])
 @login_required
@@ -495,7 +495,7 @@ def mg_maintenance():
             requested_by=session['user_id'], date_requested=request.form.get('date_requested',''))
         flash("Demande de maintenance créée", "success"); return redirect(url_for('modules.mg_maintenance'))
     items = db_get_all('mg_maintenance')
-    return render_template('mod_maintenance.html', page='maintenance', items=items)
+    return render_template('mod_mg_sub.html', page='maintenance', items=items)
 
 @modules_bp.route('/moyens-generaux/maintenance/<int:mid>/status/<status>')
 @login_required
