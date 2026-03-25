@@ -113,6 +113,8 @@ from models import migrate_v19
 migrate_v19()
 from models import migrate_v20
 migrate_v20()
+from models import migrate_v21
+migrate_v21()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -125,6 +127,8 @@ from models import migrate_v19
 migrate_v19()
 from models import migrate_v20
 migrate_v20()
+from models import migrate_v21
+migrate_v21()
 
 # Register module routes
 from modules_routes import modules_bp
@@ -2121,7 +2125,7 @@ def rapport_caisse_edit(rid):
     
     conn.close()
     report['items'] = json.loads(report.get('items_json','[]') or '[]')
-    return render_template('rapport_caisse_edit.html', page='comptabilite', report=report, report_items=report['items'])
+    return render_template('rapport_caisse_new.html', page='comptabilite', report=report, report_items=report['items'])
 
 @app.route('/comptabilite/rapport-caisse/pdf/<int:rid>')
 @permission_required('comptabilite')
@@ -2462,7 +2466,7 @@ def devis_new():
     clients = get_all_clients()
     from models import db_get_all
     stock_items = db_get_all('stock_items', order='name ASC')
-    return render_template('devis_new.html', page='devis', clients=clients, stock_items=stock_items)
+    return render_template('devis_edit.html', page='devis', clients=clients, stock_items=stock_items)
 
 @app.route('/devis/pdf/<int:did>')
 @permission_required('proforma')
@@ -2792,7 +2796,7 @@ def rh_paie_edit(pid):
         flash(f"Bulletin modifié — Net: {net:,.0f} FCFA", "success")
         return redirect(url_for('rh_paie_view', pid=pid))
     employees = get_all_employees()
-    return render_template('rh_paie_edit.html', page='paie', p=p, employees=employees)
+    return render_template('rh_paie_view.html', page='paie', p=p, employees=employees)
 
 @app.route('/rh/paie/<int:pid>/pdf')
 @permission_required('fichiers')
@@ -3305,58 +3309,173 @@ def rh_organigramme():
 # ======================== CHAT ========================
 
 @app.route('/chat')
-@login_required
+@permission_required('chat')
 def chat_page():
     channel = request.args.get('channel', 'general')
     dm_user = request.args.get('dm')
     users = get_all_users()
+    conn = _gdb()
+    channels = [dict(r) for r in conn.execute("SELECT * FROM chat_channels ORDER BY name").fetchall()]
+    
+    # Recent DM contacts with last message
+    dm_contacts = [dict(r) for r in conn.execute("""
+        SELECT DISTINCT CASE WHEN m.sender_id=? THEN m.receiver_id ELSE m.sender_id END as uid,
+            u.full_name, MAX(m.created_at) as last_msg,
+            (SELECT content FROM messages WHERE 
+                ((sender_id=? AND receiver_id=u.id) OR (sender_id=u.id AND receiver_id=?))
+                ORDER BY created_at DESC LIMIT 1) as last_content,
+            (SELECT COUNT(*) FROM messages WHERE sender_id=u.id AND receiver_id=? AND read=0) as unread
+        FROM messages m
+        JOIN users u ON u.id = CASE WHEN m.sender_id=? THEN m.receiver_id ELSE m.sender_id END
+        WHERE (m.sender_id=? OR m.receiver_id=?) AND m.channel='direct'
+        GROUP BY uid ORDER BY last_msg DESC
+    """, (session['user_id'],)*7).fetchall()]
+    
     if dm_user:
         msgs = get_direct_messages(session['user_id'], int(dm_user))
         target = get_user_by_id(int(dm_user))
         mark_chat_read(session['user_id'], '_dm_all')
-        return render_template('chat.html', page='chat', messages=msgs, users=users,
-                              channel=f'dm_{dm_user}', dm_target=target)
-    msgs = get_messages(channel)
-    mark_chat_read(session['user_id'], channel)
+        # Mark messages as read
+        conn.execute("UPDATE messages SET status='read' WHERE sender_id=? AND receiver_id=? AND status!='read'",
+            (int(dm_user), session['user_id']))
+        conn.commit()
+    else:
+        msgs = get_messages(channel)
+        target = None
+        mark_chat_read(session['user_id'], channel)
+    
+    conn.close()
     return render_template('chat.html', page='chat', messages=msgs, users=users,
-                          channel=channel, dm_target=None)
+        channel=channel, dm_target=target, channels=channels, dm_contacts=dm_contacts)
 
 @app.route('/chat/send', methods=['POST'])
-@login_required
+@permission_required('chat')
 def chat_send():
     content = request.form.get('content', '').strip()
     channel = request.form.get('channel', 'general')
+    msg_type = request.form.get('message_type', 'text')
     dm_id = None
     if channel.startswith('dm_'):
         dm_id = int(channel.split('_')[1])
-    if content:
+    
+    # Handle file upload
+    file_url = ''
+    file_name = ''
+    if 'file' in request.files and request.files['file'].filename:
+        f = request.files['file']
+        from werkzeug.utils import secure_filename as _sf
+        fname = f"{int(datetime.now().timestamp())}_{_sf(f.filename)}"
+        fdir = os.path.join(app.config['UPLOAD_FOLDER'], 'chat_files')
+        os.makedirs(fdir, exist_ok=True)
+        f.save(os.path.join(fdir, fname))
+        file_url = f'/uploads/chat_files/{fname}'
+        file_name = f.filename
+        msg_type = 'file'
+        if not content: content = f'📎 {f.filename}'
+    
+    if content or file_url:
+        conn = _gdb()
         if dm_id:
-            send_message(session['user_id'], content, 'direct', dm_id)
+            conn.execute("""INSERT INTO messages (sender_id, receiver_id, channel, content, message_type, file_url, file_name, status)
+                VALUES (?,?,'direct',?,?,?,?,'sent')""",
+                (session['user_id'], dm_id, content, msg_type, file_url, file_name))
         else:
-            send_message(session['user_id'], content, channel, None)
-    if dm_id:
-        return redirect(f'/chat?dm={dm_id}')
+            conn.execute("""INSERT INTO messages (sender_id, channel, content, message_type, file_url, file_name, status)
+                VALUES (?,?,?,?,?,?,'sent')""",
+                (session['user_id'], channel, content, msg_type, file_url, file_name))
+        conn.commit(); conn.close()
+    
+    if dm_id: return redirect(f'/chat?dm={dm_id}')
     return redirect(f'/chat?channel={channel}')
-
-@app.route('/chat/unread')
-@login_required
-def chat_unread_api():
-    """API: nombre de messages non lus."""
-    count = get_unread_count(session['user_id'])
-    return jsonify({'unread': count})
 
 @app.route('/chat/api')
 @login_required
 def chat_api():
-    """API pour rafraîchir les messages (polling)."""
     channel = request.args.get('channel', 'general')
     dm_user = request.args.get('dm')
+    after_id = int(request.args.get('after', 0) or 0)
+    conn = _gdb()
     if dm_user:
-        msgs = get_direct_messages(session['user_id'], int(dm_user))
+        uid = int(dm_user)
+        msgs = [dict(r) for r in conn.execute("""SELECT m.*, u.full_name as sender_name FROM messages m
+            LEFT JOIN users u ON m.sender_id=u.id
+            WHERE m.channel='direct' AND ((m.sender_id=? AND m.receiver_id=?) OR (m.sender_id=? AND m.receiver_id=?))
+            AND m.id > ? ORDER BY m.created_at""",
+            (session['user_id'], uid, uid, session['user_id'], after_id)).fetchall()]
+        # Mark as read
+        conn.execute("UPDATE messages SET status='read' WHERE sender_id=? AND receiver_id=? AND status!='read'",
+            (uid, session['user_id']))
+        conn.commit()
     else:
-        msgs = get_messages(channel)
-    return jsonify([{'id': m['id'], 'sender': m['sender_name'], 'sender_id': m['sender_id'],
-                     'content': m['content'], 'time': m['created_at'][11:16]} for m in msgs])
+        msgs = [dict(r) for r in conn.execute("""SELECT m.*, u.full_name as sender_name FROM messages m
+            LEFT JOIN users u ON m.sender_id=u.id
+            WHERE m.channel=? AND m.id > ? ORDER BY m.created_at""",
+            (channel, after_id)).fetchall()]
+    
+    # Typing indicators
+    typing_users = [dict(r) for r in conn.execute("""SELECT u.full_name FROM chat_typing ct
+        JOIN users u ON ct.user_id=u.id
+        WHERE ct.channel=? AND ct.user_id!=? AND ct.updated_at > datetime('now', '-5 seconds')""",
+        (channel if not dm_user else f'dm_{dm_user}', session['user_id'])).fetchall()]
+    
+    conn.close()
+    return jsonify({
+        'messages': [{'id': m['id'], 'sender': m.get('sender_name','?'), 'sender_id': m['sender_id'],
+                      'content': m['content'], 'time': (m['created_at'] or '')[-8:-3],
+                      'type': m.get('message_type','text'), 'file_url': m.get('file_url',''),
+                      'file_name': m.get('file_name',''), 'status': m.get('status','sent')} for m in msgs],
+        'typing': [t['full_name'] for t in typing_users]
+    })
+
+@app.route('/chat/typing', methods=['POST'])
+@login_required
+def chat_typing():
+    channel = request.form.get('channel', 'general')
+    conn = _gdb()
+    conn.execute("DELETE FROM chat_typing WHERE user_id=? AND channel=?", (session['user_id'], channel))
+    conn.execute("INSERT INTO chat_typing (user_id, channel, updated_at) VALUES (?,?,datetime('now'))",
+        (session['user_id'], channel))
+    conn.commit(); conn.close()
+    return jsonify({'ok': True})
+
+@app.route('/chat/unread')
+@login_required
+def chat_unread_api():
+    count = get_unread_count(session['user_id'])
+    return jsonify({'unread': count})
+
+@app.route('/chat/ticket', methods=['POST'])
+@permission_required('chat')
+def chat_create_ticket():
+    msg_id = int(request.form.get('message_id', 0) or 0)
+    title = request.form.get('title', 'Ticket depuis chat')
+    conn = _gdb()
+    conn.execute("INSERT INTO chat_tickets (message_id, title, created_by, status, priority) VALUES (?,?,?,'ouvert','normal')",
+        (msg_id, title, session['user_id']))
+    conn.commit(); conn.close()
+    flash("Ticket créé depuis le chat", "success")
+    return redirect('/chat')
+
+@app.route('/chat/supervision')
+@permission_required('admin')
+def chat_supervision():
+    conn = _gdb()
+    stats = {
+        'total_messages': conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0],
+        'today': conn.execute("SELECT COUNT(*) FROM messages WHERE date(created_at)=date('now')").fetchone()[0],
+        'active_users': conn.execute("SELECT COUNT(DISTINCT sender_id) FROM messages WHERE created_at > datetime('now','-24 hours')").fetchone()[0],
+        'unread_total': conn.execute("SELECT COUNT(*) FROM messages WHERE read=0").fetchone()[0],
+    }
+    recent = [dict(r) for r in conn.execute("""SELECT m.*, u.full_name as sender_name FROM messages m
+        LEFT JOIN users u ON m.sender_id=u.id ORDER BY m.created_at DESC LIMIT 30""").fetchall()]
+    user_stats = [dict(r) for r in conn.execute("""SELECT u.full_name, COUNT(m.id) as msg_count,
+        MAX(m.created_at) as last_active FROM messages m LEFT JOIN users u ON m.sender_id=u.id
+        GROUP BY m.sender_id ORDER BY msg_count DESC""").fetchall()]
+    tickets = [dict(r) for r in conn.execute("""SELECT t.*, u.full_name as creator FROM chat_tickets t
+        LEFT JOIN users u ON t.created_by=u.id ORDER BY t.created_at DESC LIMIT 20""").fetchall()]
+    conn.close()
+    return render_template('chat_supervision.html', page='chat', stats=stats,
+        recent=recent, user_stats=user_stats, tickets=tickets)
 
 
 # ======================== APPELS AUDIO/VIDEO ========================
@@ -3606,7 +3725,7 @@ def tracking_vehicule_edit(vid):
         conn.commit(); conn.close()
         flash("Véhicule modifié","success"); return redirect('/tracking/vehicules')
     conn.close()
-    return render_template('tracking_vehicule_edit.html', page='tracking_vehicules', vehicle=dict(v))
+    return render_template('tracking_vehicule_view.html', page='tracking_vehicules', vehicle=dict(v))
 
 @app.route('/tracking/vehicules/delete/<int:vid>')
 @permission_required('tracking')
@@ -4134,7 +4253,7 @@ def caisse_edit(sid):
         conn.commit(); conn.close()
         flash("Sortie de caisse modifiée", "success")
         return redirect(url_for('caisse_sortie'))
-    return render_template('caisse_edit.html', page='caisse_sortie', s=dict(s))
+    return render_template('caisse_preview.html', page='caisse_sortie', s=dict(s))
 
 @app.route('/caisse-sortie/<int:sid>/preview')
 @login_required
