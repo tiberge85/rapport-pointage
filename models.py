@@ -2446,3 +2446,30 @@ def migrate_v25():
         );
     ''')
     conn.commit(); conn.close()
+
+def migrate_v26():
+    conn = get_db()
+    # New payslip fields
+    for col, typ in [('prime_mission','REAL DEFAULT 0'),('cnps_retraite_pat','REAL DEFAULT 0'),
+                     ('cnps_prestation_pat','REAL DEFAULT 0'),('cnps_accident_pat','REAL DEFAULT 0'),
+                     ('taxe_apprentissage','REAL DEFAULT 0'),('fdfp','REAL DEFAULT 0'),
+                     ('cnps_retraite_sal','REAL DEFAULT 0')]:
+        try: conn.execute(f"ALTER TABLE payslips ADD COLUMN {col} {typ}")
+        except: pass
+    # Absences table
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS absences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            employee_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            type TEXT DEFAULT 'injustifiee',
+            motif TEXT DEFAULT '',
+            duree TEXT DEFAULT 'journee',
+            justificatif INTEGER DEFAULT 0,
+            notes TEXT DEFAULT '',
+            created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (employee_id) REFERENCES employees(id)
+        );
+    ''')
+    conn.commit(); conn.close()

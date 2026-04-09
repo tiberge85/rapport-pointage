@@ -128,6 +128,8 @@ from models import migrate_v24
 migrate_v24()
 from models import migrate_v25
 migrate_v25()
+from models import migrate_v26
+migrate_v26()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -2943,6 +2945,42 @@ def rh_conges_status(lid, status):
         flash(f"Congé {'approuvé' if status == 'approuve' else 'refusé'}", "success")
     return redirect(url_for('rh_conges'))
 
+# ======================== ABSENCES ========================
+
+@app.route('/rh/absences')
+@permission_required('fichiers')
+def rh_absences():
+    conn = _gdb()
+    absences = [dict(r) for r in conn.execute("""SELECT a.*, e.first_name||' '||e.last_name as employee_name
+        FROM absences a LEFT JOIN employees e ON a.employee_id=e.id ORDER BY a.date DESC""").fetchall()]
+    conn.close()
+    employees = get_all_employees(status=None)
+    return render_template('rh_conges.html', page='absences', absences=absences, employees=employees)
+
+@app.route('/rh/absences/add', methods=['POST'])
+@permission_required('fichiers')
+def rh_absences_add():
+    conn = _gdb()
+    conn.execute("""INSERT INTO absences (employee_id, date, type, motif, duree, justificatif, notes, created_by)
+        VALUES (?,?,?,?,?,?,?,?)""",
+        (int(request.form['employee_id']), request.form['date'],
+         request.form.get('type','injustifiee'), request.form.get('motif',''),
+         request.form.get('duree','journee'),
+         1 if request.form.get('justificatif') else 0,
+         request.form.get('notes',''), session['user_id']))
+    conn.commit(); conn.close()
+    flash("Absence enregistrée", "success")
+    return redirect(url_for('rh_absences'))
+
+@app.route('/rh/absences/delete/<int:aid>')
+@permission_required('fichiers')
+def rh_absences_delete(aid):
+    conn = _gdb()
+    conn.execute("DELETE FROM absences WHERE id=?", (aid,))
+    conn.commit(); conn.close()
+    flash("Absence supprimée", "success")
+    return redirect(url_for('rh_absences'))
+
 @app.route('/rh/paie')
 @permission_required('fichiers')
 def rh_paie():
@@ -2957,9 +2995,12 @@ def rh_paie_add():
     f = lambda k: float(request.form.get(k, 0) or 0)
     base = f('base_salary')
     primes = f('bonus') + f('prime_transport') + f('prime_anciennete') + f('prime_logement') + f('prime_rendement') + f('avantages_nature')
-    brut = base + f('overtime_amount') + primes + f('commission')
+    brut = base + f('overtime_amount') + primes
+    # Autres primes hors brut
+    total_autres = f('prime_mission') + f('commission')
+    # Retenues
     retenues = f('cnps_employee') + f('insurance_amount') + f('its') + f('deductions') + f('autres_retenues') + f('avances')
-    net = brut - retenues
+    net = brut + total_autres - retenues
     
     create_payslip(
         employee_id=int(request.form['employee_id']), period=request.form['period'],
@@ -2975,7 +3016,7 @@ def rh_paie_add():
         conges_payes=int(request.form.get('conges_payes', 0) or 0),
         jours_absence=int(request.form.get('jours_absence', 0) or 0),
         mode_paiement=request.form.get('mode_paiement', 'virement'),
-        cnps_employer=f('cnps_employer'),
+        cnps_employer=f('cnps_employer'), prime_mission=f('prime_mission'),
     )
     flash(f"Bulletin créé — Net: {net:,.0f} FCFA", "success")
     return redirect(url_for('rh_paie'))
@@ -3013,112 +3054,182 @@ def rh_paie_edit(pid):
 @app.route('/rh/paie/<int:pid>/pdf')
 @permission_required('fichiers')
 def rh_paie_pdf(pid):
-    """Génère le bulletin de paie PDF format CI."""
+    """Génère le bulletin de paie PDF format CI avec logo RAMYA."""
     p = get_payslip_detail_v2(pid)
     if not p: flash("Non trouvé","error"); return redirect(url_for('rh_paie'))
     
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
-    from reportlab.lib.colors import HexColor
+    from reportlab.lib.colors import HexColor, white
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
     
     output = os.path.join(app.config['UPLOAD_FOLDER'], f'bulletin_{p["period"]}_{p["employee_name"].replace(" ","_")}.pdf')
     os.makedirs(os.path.dirname(output), exist_ok=True)
-    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=12*mm, bottomMargin=12*mm)
+    doc = SimpleDocTemplate(output, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=10*mm, bottomMargin=10*mm)
     
-    DARK = HexColor('#222222'); GREY = HexColor('#888'); LIGHT = HexColor('#f5f5f5')
-    s_t = ParagraphStyle('t', fontSize=14, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_CENTER)
-    s_s = ParagraphStyle('s', fontSize=9, alignment=TA_CENTER, textColor=GREY)
-    s_n = ParagraphStyle('n', fontSize=9, leading=12, textColor=DARK)
-    s_b = ParagraphStyle('b', fontSize=9, fontName='Helvetica-Bold', textColor=DARK)
-    s_h = ParagraphStyle('h', fontSize=8, fontName='Helvetica-Bold', textColor=DARK)
+    TEAL = HexColor('#1A7A6D'); DARK_TEAL = HexColor('#0D6B5E'); NAVY = HexColor('#1a1a2e')
+    ORANGE = HexColor('#e8672a'); GOLD = HexColor('#DAA520')
+    DARK = HexColor('#222'); GREY = HexColor('#888'); LIGHT = HexColor('#f5f7fa')
+    RED = HexColor('#c53030'); GREEN = HexColor('#2e7d32'); BLUE = HexColor('#1565c0')
+    
+    s_h = ParagraphStyle('h', fontSize=8, fontName='Helvetica-Bold', textColor=white)
     s_c = ParagraphStyle('c', fontSize=8, leading=10, textColor=DARK)
+    s_cb = ParagraphStyle('cb', fontSize=8, fontName='Helvetica-Bold', textColor=DARK)
     s_r = ParagraphStyle('r', fontSize=8, alignment=TA_RIGHT, textColor=DARK)
     s_rb = ParagraphStyle('rb', fontSize=8, fontName='Helvetica-Bold', alignment=TA_RIGHT, textColor=DARK)
+    s_cw = ParagraphStyle('cw', fontSize=8, textColor=white)
+    s_rw = ParagraphStyle('rw', fontSize=8, fontName='Helvetica-Bold', alignment=TA_RIGHT, textColor=white)
     fmt = lambda x: f"{(x or 0):,.0f}"
+    g = lambda k: p.get(k, 0) or 0
     
     story = []
-    story.append(Paragraph("BULLETIN DE PAIE", s_t))
-    story.append(Spacer(1, 2*mm))
-    story.append(HRFlowable(width="100%", thickness=1, color=DARK))
-    story.append(Spacer(1, 4*mm))
+    pw = 186*mm  # page width
     
-    # === HEADER ===
-    header = [[
-        Paragraph("<b>EMPLOYEUR</b><br/>WannyGest<br/>Abidjan, Côte d'Ivoire<br/>RC: CI-ABJ-XXXX<br/>N° CNPS: XXXX", s_c),
-        Paragraph(f"<b>EMPLOYÉ</b><br/>{p['employee_name']}<br/>Matricule: {p.get('matricule','') or '-'}<br/>N° CNPS: {p.get('insurance_number','') or '-'}<br/>Poste: {p.get('position','') or '-'}<br/>Embauche: {p.get('hire_date','') or '-'}", s_c),
-        Paragraph(f"<b>PÉRIODE</b><br/>{p['period']}<br/>Jours: {p.get('jours_travailles',26)}<br/>Heures: {fmt(p.get('heures_travaillees',0))}<br/>Congés: {p.get('conges_payes',0)}<br/>Absences: {p.get('jours_absence',0)}", s_c),
+    # === HEADER RAMYA ===
+    hdr = [[
+        Paragraph("<b>RAMYA TECHNOLOGIE &amp; INNOVATION</b><br/>Sécurité électronique · Vidéosurveillance<br/>Abidjan, Côte d'Ivoire<br/>RCCM: CI-ABJ-2024-B-XXXXX<br/>N° CNPS: XXXX-XXXX", s_cw),
+        Paragraph(f"<b>BULLETIN DE PAIE</b><br/>Période : {p['period']}<br/>Date d'émission : {datetime.now().strftime('%d/%m/%Y')}", 
+                  ParagraphStyle('hdr', fontSize=9, fontName='Helvetica-Bold', textColor=white, alignment=TA_RIGHT, leading=13))
     ]]
-    ht = Table(header, colWidths=[60*mm, 60*mm, 55*mm])
-    ht.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,HexColor('#ccc')),('BACKGROUND',(0,0),(-1,-1),LIGHT),
-        ('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),('LEFTPADDING',(0,0),(-1,-1),8)]))
-    story.append(ht)
-    story.append(Spacer(1, 5*mm))
+    ht = Table(hdr, colWidths=[pw*0.6, pw*0.4])
+    ht.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),NAVY),('TOPPADDING',(0,0),(-1,-1),10),
+        ('BOTTOMPADDING',(0,0),(-1,-1),10),('LEFTPADDING',(0,0),(-1,-1),12),('RIGHTPADDING',(0,0),(-1,-1),12),
+        ('ROUNDEDCORNERS',[6,6,0,0])]))
+    story.extend([ht, Spacer(1, 3*mm)])
+    
+    # === EMPLOYEE INFO ===
+    emp_info = [[
+        Paragraph(f"<b>Employé :</b> {p['employee_name']}", s_cb),
+        Paragraph(f"<b>Matricule :</b> {p.get('matricule','') or '-'}", s_c),
+        Paragraph(f"<b>N° CNPS :</b> {p.get('insurance_number','') or '-'}", s_c),
+    ],[
+        Paragraph(f"<b>Poste :</b> {p.get('position','') or '-'}", s_c),
+        Paragraph(f"<b>Département :</b> {p.get('department','') or '-'}", s_c),
+        Paragraph(f"<b>Embauche :</b> {p.get('hire_date','') or '-'}", s_c),
+    ],[
+        Paragraph(f"<b>Jours travaillés :</b> {p.get('jours_travailles',26)}", s_c),
+        Paragraph(f"<b>Absences :</b> {p.get('jours_absence',0)} j", s_c),
+        Paragraph(f"<b>Mode :</b> {p.get('mode_paiement','virement')}", s_c),
+    ]]
+    et = Table(emp_info, colWidths=[pw*0.4, pw*0.3, pw*0.3])
+    et.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.4,HexColor('#ddd')),('BACKGROUND',(0,0),(-1,-1),LIGHT),
+        ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4),('LEFTPADDING',(0,0),(-1,-1),6)]))
+    story.extend([et, Spacer(1, 4*mm)])
+    
+    cw = [pw*0.45, pw*0.18, pw*0.12, pw*0.25]
     
     # === GAINS ===
-    g_rows = [
-        [Paragraph(h, s_h) for h in ['GAINS', 'Base', 'Taux', 'Montant']],
-        [Paragraph('Salaire de base', s_c), Paragraph(fmt(p.get('base_salary',0)), s_r), Paragraph('', s_r), Paragraph(fmt(p.get('base_salary',0)), s_rb)],
-        [Paragraph('Heures supplémentaires', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(p.get('overtime_amount',0)), s_r)],
-        [Paragraph('Prime de transport', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(p.get('prime_transport',0)), s_r)],
-        [Paragraph("Prime d'ancienneté", s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(p.get('prime_anciennete',0)), s_r)],
-        [Paragraph('Prime de logement', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(p.get('prime_logement',0)), s_r)],
-        [Paragraph('Prime de rendement / KPI', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(p.get('prime_rendement',0) + (p.get('bonus',0) or 0)), s_r)],
-        [Paragraph('Avantages en nature', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(p.get('avantages_nature',0)), s_r)],
-        [Paragraph('Commissions', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(p.get('commission',0)), s_r)],
-        [Paragraph('<b>SALAIRE BRUT</b>', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(f"<b>{fmt(p['salaire_brut'])}</b>", s_rb)],
+    base = g('base_salary')
+    brut = base + g('overtime_amount') + g('bonus') + g('prime_transport') + g('prime_anciennete') + g('prime_logement') + g('prime_rendement') + g('avantages_nature')
+    
+    gains = [
+        [Paragraph('<b>GAINS</b>', s_h), Paragraph('<b>Base</b>', s_h), Paragraph('<b>Taux</b>', s_h), Paragraph('<b>Montant</b>', s_h)],
+        [Paragraph('Salaire de base', s_c), Paragraph(fmt(base), s_r), Paragraph('', s_r), Paragraph(fmt(base), s_rb)],
+        [Paragraph('Heures supplémentaires', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(g('overtime_amount')), s_r)],
+        [Paragraph('Prime de transport', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(g('prime_transport')), s_r)],
+        [Paragraph("Prime d'ancienneté", s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(g('prime_anciennete')), s_r)],
+        [Paragraph('Prime de logement', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(g('prime_logement')), s_r)],
+        [Paragraph('Prime de rendement / KPI', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(g('prime_rendement') + g('bonus')), s_r)],
+        [Paragraph('Avantages en nature', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(g('avantages_nature')), s_r)],
     ]
-    cw = [65*mm, 30*mm, 30*mm, 40*mm]
-    gt = Table(g_rows, colWidths=cw)
-    gt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),LIGHT),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
-        ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
-        ('LINEABOVE',(0,9),(-1,9),1,DARK)]))
-    story.append(gt)
-    story.append(Spacer(1, 3*mm))
+    gt = Table(gains, colWidths=cw)
+    gt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),TEAL),('GRID',(0,0),(-1,-1),0.4,HexColor('#ddd')),
+        ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),('LEFTPADDING',(0,0),(-1,-1),6)]))
+    story.extend([gt, Spacer(1, 1*mm)])
+    
+    # === SALAIRE BRUT ===
+    brut_row = [[Paragraph('<b>SALAIRE BRUT</b>', ParagraphStyle('bb', fontSize=9, fontName='Helvetica-Bold', textColor=white)),
+                 Paragraph('', s_r), Paragraph('', s_r),
+                 Paragraph(f'<b>{fmt(brut)} FCFA</b>', ParagraphStyle('bv', fontSize=9, fontName='Helvetica-Bold', textColor=white, alignment=TA_RIGHT))]]
+    bt = Table(brut_row, colWidths=cw)
+    bt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),DARK_TEAL),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),('LEFTPADDING',(0,0),(-1,-1),6),('RIGHTPADDING',(0,0),(-1,-1),6)]))
+    story.extend([bt, Spacer(1, 3*mm)])
+    
+    # === AUTRES PRIMES (hors brut) ===
+    prime_mission = g('prime_mission')
+    commission = g('commission')
+    total_autres = prime_mission + commission
+    
+    ap = [
+        [Paragraph('<b>AUTRES PRIMES (hors salaire brut)</b>', s_h), Paragraph('', s_h), Paragraph('', s_h), Paragraph('<b>Montant</b>', s_h)],
+        [Paragraph('Prime de mission', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(prime_mission), s_r)],
+        [Paragraph('Commissions', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(commission), s_r)],
+        [Paragraph('<b>Total autres primes</b>', s_cb), Paragraph('', s_r), Paragraph('', s_r), Paragraph(f'<b>{fmt(total_autres)}</b>', s_rb)],
+    ]
+    apt = Table(ap, colWidths=cw)
+    apt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),ORANGE),('GRID',(0,0),(-1,-1),0.4,HexColor('#ddd')),
+        ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),('LEFTPADDING',(0,0),(-1,-1),6),
+        ('LINEABOVE',(0,3),(-1,3),1,ORANGE)]))
+    story.extend([apt, Spacer(1, 3*mm)])
     
     # === RETENUES ===
-    r_rows = [
-        [Paragraph(h, s_h) for h in ['RETENUES', 'Base', 'Taux', 'Montant']],
-        [Paragraph('Cotisation CNPS (salarié)', s_c), Paragraph(fmt(p['salaire_brut']), s_r), Paragraph('6.3%', s_r), Paragraph(fmt(p.get('cnps_employee',0)), s_r)],
-        [Paragraph('Assurance maladie', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(p.get('insurance_amount',0)), s_r)],
-        [Paragraph('Impôt sur salaire (ITS)', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(p.get('its',0)), s_r)],
-        [Paragraph('Autres déductions', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(p.get('deductions',0)), s_r)],
-        [Paragraph('Avances / prêts', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(p.get('avances',0)), s_r)],
-        [Paragraph('Autres retenues', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(p.get('autres_retenues',0)), s_r)],
-        [Paragraph('<b>TOTAL RETENUES</b>', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph(f"<b>{fmt(p['total_retenues'])}</b>", s_rb)],
+    plafond = min(brut, 2700000)
+    cnps_ret_sal = g('cnps_retraite_sal') or round(plafond * 0.063)
+    cnps_ret_pat = g('cnps_retraite_pat') or round(plafond * 0.077)
+    cnps_pf_pat = g('cnps_prestation_pat') or round(brut * 0.0575)
+    cnps_acc_pat = g('cnps_accident_pat') or round(brut * 0.03)
+    taxe_app = g('taxe_apprentissage') or round(brut * 0.004)
+    fdfp_val = g('fdfp') or round(brut * 0.012)
+    total_pat = cnps_ret_pat + cnps_pf_pat + cnps_acc_pat + taxe_app + fdfp_val
+    
+    its = g('its')
+    assurance = g('insurance_amount')
+    deductions = g('deductions')
+    avances = g('avances')
+    autres_ret = g('autres_retenues')
+    total_sal = cnps_ret_sal + its + assurance + deductions + avances + autres_ret
+    
+    cw5 = [pw*0.32, pw*0.14, pw*0.14, pw*0.18, pw*0.22]
+    
+    ret = [
+        [Paragraph('<b>RETENUES / COTISATIONS</b>', s_h), Paragraph('<b>Part patron.</b>', s_h), Paragraph('<b>Part salar.</b>', s_h), Paragraph('<b>Base calcul</b>', s_h), Paragraph('<b>Montant salar.</b>', s_h)],
+        [Paragraph('CNPS Retraite', s_c), Paragraph('7,7%', s_r), Paragraph('6,3%', s_r), Paragraph(f'Plaf. {fmt(plafond)}', ParagraphStyle('sm',fontSize=7,alignment=TA_RIGHT,textColor=GREY)), Paragraph(fmt(cnps_ret_sal), s_rb)],
+        [Paragraph('CNPS Prestations familiales', s_c), Paragraph('5,75%', s_r), Paragraph('0%', s_r), Paragraph(fmt(brut), s_r), Paragraph('—', s_r)],
+        [Paragraph('CNPS Accidents du travail', s_c), Paragraph('3%', s_r), Paragraph('0%', s_r), Paragraph(fmt(brut), s_r), Paragraph('—', s_r)],
+        [Paragraph("Taxe d'apprentissage", s_c), Paragraph('0,4%', s_r), Paragraph('0%', s_r), Paragraph(fmt(brut), s_r), Paragraph('—', s_r)],
+        [Paragraph('Formation prof. (FDFP)', s_c), Paragraph('1,2%', s_r), Paragraph('0%', s_r), Paragraph(fmt(brut), s_r), Paragraph('—', s_r)],
+        [Paragraph('ITS (Impôt sur salaire)', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(its), s_r)],
+        [Paragraph('Assurance maladie', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(assurance), s_r)],
+        [Paragraph('Autres déductions', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(deductions), s_r)],
+        [Paragraph('Avances / Prêts', s_c), Paragraph('', s_r), Paragraph('', s_r), Paragraph('', s_r), Paragraph(fmt(avances), s_r)],
     ]
-    rt = Table(r_rows, colWidths=cw)
-    rt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),LIGHT),('GRID',(0,0),(-1,-1),0.5,HexColor('#ddd')),
-        ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
-        ('LINEABOVE',(0,7),(-1,7),1,DARK)]))
-    story.append(rt)
-    story.append(Spacer(1, 4*mm))
+    rt = Table(ret, colWidths=cw5)
+    rt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),RED),('GRID',(0,0),(-1,-1),0.4,HexColor('#ddd')),
+        ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),('LEFTPADDING',(0,0),(-1,-1),5),
+        ('BACKGROUND',(0,1),(0,5),HexColor('#fef9f0'))]))
+    story.extend([rt, Spacer(1, 1*mm)])
+    
+    # Totals retenues
+    tot_rows = [
+        [Paragraph('<b>Total charges patronales</b>', s_cw), Paragraph(f'<b>{fmt(total_pat)} FCFA</b>', s_rw)],
+        [Paragraph('<b>Total retenues salariales</b>', s_cw), Paragraph(f'<b>{fmt(total_sal)} FCFA</b>', s_rw)],
+    ]
+    tt = Table(tot_rows, colWidths=[pw*0.65, pw*0.35])
+    tt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),HexColor('#7b1fa2')),('BACKGROUND',(0,1),(-1,1),RED),
+        ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4),('LEFTPADDING',(0,0),(-1,-1),8),('RIGHTPADDING',(0,0),(-1,-1),8)]))
+    story.extend([tt, Spacer(1, 4*mm)])
     
     # === NET À PAYER ===
-    story.append(HRFlowable(width="100%", thickness=2, color=DARK))
-    net_row = [[Paragraph('<b>NET À PAYER</b>', ParagraphStyle('net', fontSize=13, fontName='Helvetica-Bold', textColor=DARK)),
-                Paragraph(f'<b>{fmt(p["net_salary"])} FCFA</b>', ParagraphStyle('nv', fontSize=13, fontName='Helvetica-Bold', textColor=DARK, alignment=TA_RIGHT))]]
-    nt = Table(net_row, colWidths=[100*mm, 70*mm])
-    nt.setStyle(TableStyle([('TOPPADDING',(0,0),(-1,-1),8),('BOTTOMPADDING',(0,0),(-1,-1),8)]))
-    story.append(nt)
-    story.append(HRFlowable(width="100%", thickness=2, color=DARK))
-    story.append(Spacer(1, 4*mm))
-    
-    # === Infos complémentaires ===
-    story.append(Paragraph(f"Mode de paiement : {p.get('mode_paiement','virement')}", s_n))
-    if p.get('cnps_employer',0):
-        story.append(Paragraph(f"Cotisation CNPS patronale : {fmt(p['cnps_employer'])} FCFA", s_n))
-    story.append(Spacer(1, 12*mm))
+    net = brut + total_autres - total_sal
+    net_row = [[
+        Paragraph('<b>NET À PAYER</b>', ParagraphStyle('net', fontSize=14, fontName='Helvetica-Bold', textColor=white)),
+        Paragraph(f'<b>{fmt(net)} FCFA</b>', ParagraphStyle('nv', fontSize=14, fontName='Helvetica-Bold', textColor=white, alignment=TA_RIGHT))
+    ]]
+    nt = Table(net_row, colWidths=[pw*0.55, pw*0.45])
+    nt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),NAVY),('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),10),
+        ('LEFTPADDING',(0,0),(-1,-1),12),('RIGHTPADDING',(0,0),(-1,-1),12),('ROUNDEDCORNERS',[6,6,6,6])]))
+    story.extend([nt, Spacer(1, 6*mm)])
     
     # Signatures
-    sig = [[Paragraph("<b>L'Employeur</b><br/><br/><br/>Signature et cachet", s_c),
-            Paragraph(f"<b>L'Employé</b><br/><br/><br/>Lu et approuvé<br/>{p['employee_name']}", s_c)]]
-    st = Table(sig, colWidths=[85*mm, 85*mm])
-    story.append(st)
-    story.append(Spacer(1, 8*mm))
-    story.append(Paragraph("Ce bulletin de paie doit être conservé sans limitation de durée (Art. 32.4 du Code du Travail)", ParagraphStyle('f', fontSize=7, alignment=TA_CENTER, textColor=GREY)))
+    sig = [[Paragraph("<b>L'Employeur</b><br/><br/><br/>Signature et cachet", ParagraphStyle('sc',fontSize=8,textColor=DARK,alignment=TA_CENTER)),
+            Paragraph(f"<b>L'Employé</b><br/><br/><br/>Lu et approuvé<br/>{p['employee_name']}", ParagraphStyle('se',fontSize=8,textColor=DARK,alignment=TA_CENTER))]]
+    st = Table(sig, colWidths=[pw*0.5, pw*0.5])
+    st.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.3,HexColor('#ddd')),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
+    story.extend([st, Spacer(1, 6*mm)])
+    
+    story.append(Paragraph("Ce bulletin de paie doit être conservé sans limitation de durée (Art. 32.4 du Code du Travail de Côte d'Ivoire)", ParagraphStyle('f', fontSize=7, alignment=TA_CENTER, textColor=GREY)))
     
     doc.build(story)
     return send_file(output, as_attachment=True, download_name=f"Bulletin_{p['period']}_{p['employee_name']}.pdf")
