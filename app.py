@@ -126,6 +126,8 @@ from models import migrate_v23
 migrate_v23()
 from models import migrate_v24
 migrate_v24()
+from models import migrate_v25
+migrate_v25()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -195,7 +197,7 @@ def permission_required(perm):
 @app.context_processor
 def inject_globals():
     """Injecte les variables globales dans tous les templates."""
-    ctx = {'current_user': None, 'permissions': [], 'pending_count': 0, 'unread_messages': 0, 'caisse_pending': 0, 'weekly_champion': None, 'show_champion': True}
+    ctx = {'current_user': None, 'permissions': [], 'pending_count': 0, 'unread_messages': 0, 'caisse_pending': 0, 'weekly_champion': None, 'show_champion': True, 'active_tenders': []}
     if 'user_id' in session:
         user = get_user_by_id(session['user_id'])
         if user:
@@ -229,6 +231,12 @@ def inject_globals():
                     vis = _sc.execute("SELECT value FROM app_settings WHERE key='show_champion'").fetchone()
                     ctx['show_champion'] = (vis['value'] != '0') if vis else True
                 except: ctx['show_champion'] = True
+                try:
+                    today = datetime.now().strftime('%Y-%m-%d')
+                    tenders = [dict(r) for r in _sc.execute(
+                        "SELECT * FROM tender_links WHERE active=1 AND (deadline='' OR deadline>=?) ORDER BY deadline", (today,)).fetchall()]
+                    ctx['active_tenders'] = tenders
+                except: pass
                 _sc.close()
             except: pass
     else:
@@ -828,9 +836,15 @@ def clients_delete(cid):
 def admin_page():
     users = get_all_users()
     stats = get_dashboard_stats()
-    role_perms = {r: get_role_permissions(r) for r in ['admin', 'dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique']}
+    role_perms = {r: get_role_permissions(r) for r in ['admin', 'dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique', 'resp_projet', 'gestionnaire_projet']}
+    conn = _gdb()
+    try:
+        tenders = [dict(r) for r in conn.execute("SELECT * FROM tender_links ORDER BY active DESC, deadline ASC").fetchall()]
+    except: tenders = []
+    conn.close()
     return render_template('admin.html', page='admin', users=users, stats=stats,
-                          all_permissions=ALL_PERMISSIONS, role_perms=role_perms, perm_categories=PERM_CATEGORIES)
+                          all_permissions=ALL_PERMISSIONS, role_perms=role_perms, perm_categories=PERM_CATEGORIES,
+                          tenders=tenders, tab='tenders')
 
 @app.route('/admin/add', methods=['POST'])
 @permission_required('admin')
@@ -951,6 +965,42 @@ def admin_toggle_champion():
     except: pass
     conn.close()
     return redirect(request.referrer or '/dashboard')
+
+@app.route('/admin/appels-offres')
+@permission_required('admin')
+def admin_tenders():
+    # Redirect to admin page which now always shows tenders section
+    return redirect(url_for('admin_page'))
+
+@app.route('/admin/appels-offres/add', methods=['POST'])
+@permission_required('admin')
+def admin_tender_add():
+    conn = _gdb()
+    conn.execute("""INSERT INTO tender_links (title, url, source, deadline, category, active, created_by)
+        VALUES (?,?,?,?,?,1,?)""",
+        (request.form.get('title',''), request.form.get('url',''),
+         request.form.get('source',''), request.form.get('deadline',''),
+         request.form.get('category','securite'), session['user_id']))
+    conn.commit(); conn.close()
+    flash("Appel d'offres ajouté au ticker", "success")
+    return redirect('/admin/appels-offres')
+
+@app.route('/admin/appels-offres/delete/<int:tid>')
+@permission_required('admin')
+def admin_tender_delete(tid):
+    conn = _gdb()
+    conn.execute("DELETE FROM tender_links WHERE id=?", (tid,))
+    conn.commit(); conn.close()
+    flash("Appel d'offres supprimé", "success")
+    return redirect('/admin/appels-offres')
+
+@app.route('/admin/appels-offres/toggle/<int:tid>')
+@permission_required('admin')
+def admin_tender_toggle(tid):
+    conn = _gdb()
+    conn.execute("UPDATE tender_links SET active = CASE WHEN active=1 THEN 0 ELSE 1 END WHERE id=?", (tid,))
+    conn.commit(); conn.close()
+    return redirect('/admin/appels-offres')
 
 
 # ======================== LOGS D'ACTIVITÉ ========================

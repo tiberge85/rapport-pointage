@@ -2429,3 +2429,20 @@ def migrate_v24():
     try: conn.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('show_champion', '1')")
     except: pass
     conn.commit(); conn.close()
+
+def migrate_v25():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS tender_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            url TEXT NOT NULL,
+            source TEXT DEFAULT '',
+            deadline TEXT DEFAULT '',
+            category TEXT DEFAULT 'securite',
+            active INTEGER DEFAULT 1,
+            created_by INTEGER,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    conn.commit(); conn.close()

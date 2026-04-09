@@ -35,7 +35,7 @@
         .sidebar-footer a{color:rgba(255,255,255,0.5);text-decoration:none}
         .sidebar-footer a:hover{color:#fff}
         .main{flex:1;margin-left:260px;padding:24px 28px}
-        .page-header{margin-bottom:22px}
+        .page-header{margin-bottom:22px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
         .page-header h1{font-size:22px;font-weight:700;color:#1e1e2d}
         .page-header p{color:#888;font-size:13px;margin-top:3px}
         .card{background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);overflow:hidden;margin-bottom:18px}
@@ -108,34 +108,54 @@
         .modal-bg.active{display:flex}
         .modal{background:#fff;border-radius:14px;padding:24px;width:520px;max-width:90%;max-height:80vh;overflow-y:auto}
         .modal h3{font-size:17px;color:#1a3a5c;margin-bottom:14px}
+        @media(max-width:1024px){
+            .main{padding:16px}
+        }
         @media(max-width:768px){
+            body{display:block}
             .sidebar{transform:translateX(-260px);transition:transform 0.3s}
             .sidebar.open{transform:translateX(0)}
-            .main{margin-left:0;padding:10px}
+            .main{margin-left:0;padding:12px 10px;min-height:100vh}
             .stats-grid{grid-template-columns:1fr 1fr}
             .form-row{flex-direction:column;gap:0}
-            .page-header{flex-direction:column;gap:8px;align-items:flex-start}
+            .page-header{flex-direction:column;align-items:flex-start;gap:6px}
             .page-header h1{font-size:16px}
             .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-            .table-wrap table{min-width:600px}
-            .card{border-radius:8px}
-            .card-body{padding:10px}
-            .mobile-toggle{display:block!important;position:fixed;top:12px;left:12px;z-index:150;background:#1a3a5c;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-size:18px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.2)}
+            .table-wrap table{min-width:600px;font-size:12px}
+            .card{border-radius:8px;margin-bottom:12px}
+            .card-header{padding:10px 14px;flex-wrap:wrap;gap:6px}
+            .card-body{padding:12px}
+            .mobile-toggle{display:block!important;position:fixed;top:10px;left:10px;z-index:150;background:#1a3a5c;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:18px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.3)}
             .mobile-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:99}
             .mobile-overlay.open{display:block}
-            .modal{max-width:95vw!important;max-height:90vh;overflow-y:auto}
-            .f3,.f2{grid-template-columns:1fr!important}
-            .emp-tabs{overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
-            .emp-tab{white-space:nowrap;flex-shrink:0}
-            .chat-app{flex-direction:column;height:auto}
-            .chat-sb{width:100%!important;max-height:40vh}
-            .chat-msgs{min-height:40vh}
-            .kanban{grid-template-columns:1fr!important}
-            #championBanner{flex-direction:column;text-align:center;gap:8px}
+            .modal{max-width:95vw!important;max-height:85vh;overflow-y:auto;padding:16px}
+            .modal h3{font-size:15px}
+            .f3{grid-template-columns:1fr 1fr!important}
+            .f2{grid-template-columns:1fr!important}
+            .emp-tabs{overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch;gap:0!important}
+            .emp-tab{white-space:nowrap;flex-shrink:0;padding:8px 12px!important;font-size:11px!important}
+            .chat-app{flex-direction:column;height:auto;min-height:80vh}
+            .chat-sb{width:100%!important;max-height:35vh;border-right:none;border-bottom:1px solid #e8e8e8}
+            .chat-msgs{min-height:35vh;padding:10px 16px!important}
+            .chat-in{padding:6px 8px!important}
+            .kanban{grid-template-columns:1fr 1fr!important}
+            #championBanner{flex-direction:column;text-align:center;gap:8px;padding:12px!important}
+            .stat-card{padding:12px!important}
+            .stat-info .stat-num{font-size:20px}
+            .btn{padding:6px 12px;font-size:12px}
+            .btn-sm{padding:4px 8px;font-size:11px}
+            .upload-zone{padding:12px}
         }
         @media(max-width:480px){
             .stats-grid{grid-template-columns:1fr}
-            .main{padding:8px}
+            .main{padding:8px 6px}
+            .f3{grid-template-columns:1fr!important}
+            .kanban{grid-template-columns:1fr!important}
+            .chat-sb{max-height:30vh}
+            table{font-size:11px}
+            th,td{padding:6px 8px}
+            .page-header h1{font-size:14px}
+            .sidebar{width:240px}
         }
     </style>
 </head>
@@ -334,23 +354,34 @@
             {% endif %}
         </div>
         {% elif not show_champion and 'dashboard_general' in permissions %}
-        <!-- Ticker appels d'offres sécurité électronique -->
+        <!-- Ticker appels d'offres -->
         <div style="background:linear-gradient(135deg,#0d1b2a,#1b2838);border-radius:10px;padding:8px 16px;margin-bottom:14px;overflow:hidden;position:relative">
             <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-size:14px;flex-shrink:0">📡</span>
                 <div style="overflow:hidden;flex:1;white-space:nowrap">
-                    <div style="display:inline-block;animation:ticker 45s linear infinite;white-space:nowrap">
-                        <span style="color:#DAA520;font-size:11px;font-weight:600;margin-right:40px">🔔 SIGMAP CI — Appels d'offres sécurité électronique à surveiller</span>
-                        <span style="color:#ccc;font-size:11px;margin-right:40px">📋 Installation vidéosurveillance bâtiments administratifs — Consultez sigmap.ci</span>
-                        <span style="color:#ccc;font-size:11px;margin-right:40px">📋 Contrôle d'accès et intrusion — Ministères et ambassades</span>
-                        <span style="color:#ccc;font-size:11px;margin-right:40px">📋 Câblage réseau et sécurité informatique — Banques et assurances</span>
-                        <span style="color:#ccc;font-size:11px;margin-right:40px">📋 Maintenance systèmes de sécurité — Sites industriels Abidjan</span>
-                        <span style="color:#ccc;font-size:11px;margin-right:40px">📋 Fourniture caméras et DVR/NVR — Marchés publics 2026</span>
-                        <span style="color:#DAA520;font-size:11px;margin-right:40px">💡 Consultez régulièrement sigmap.ci, marchespublics.ci et dfrn.ci pour les opportunités</span>
+                    <div style="display:inline-block;animation:ticker {{ (active_tenders|length * 8 + 30)|int }}s linear infinite;white-space:nowrap">
+                        <span style="color:#DAA520;font-size:11px;font-weight:600;margin-right:40px">🔔 Appels d'offres sécurité électronique — En cours de validité</span>
+                        {% if active_tenders %}
+                        {% for t in active_tenders %}
+                        <a href="{{ t.url }}" target="_blank" style="color:#4fc3f7;font-size:11px;text-decoration:none;margin-right:40px">📋 {{ t.title }}{% if t.source %} — {{ t.source }}{% endif %}{% if t.deadline %} ⏰ {{ t.deadline }}{% endif %}</a>
+                        {% endfor %}
+                        {% endif %}
+                        <a href="https://www.sigmap.ci" target="_blank" style="color:#aaa;font-size:11px;text-decoration:none;margin-right:40px">🌐 sigmap.ci</a>
+                        <a href="https://www.marchespublics.ci" target="_blank" style="color:#aaa;font-size:11px;text-decoration:none;margin-right:40px">🌐 marchespublics.ci</a>
+                        <a href="https://www.dfrn.ci" target="_blank" style="color:#aaa;font-size:11px;text-decoration:none;margin-right:40px">🌐 dfrn.ci</a>
+                        {% if not active_tenders %}
+                        <span style="color:#888;font-size:11px;margin-right:40px">Aucun appel d'offres ajouté — <a href="/admin/appels-offres" style="color:#DAA520">Ajouter →</a></span>
+                        {% endif %}
+                        <!-- Duplicate for seamless loop -->
+                        <span style="color:#DAA520;font-size:11px;font-weight:600;margin-right:40px">🔔 Appels d'offres sécurité électronique</span>
+                        {% for t in active_tenders %}
+                        <a href="{{ t.url }}" target="_blank" style="color:#4fc3f7;font-size:11px;text-decoration:none;margin-right:40px">📋 {{ t.title }}{% if t.deadline %} ⏰ {{ t.deadline }}{% endif %}</a>
+                        {% endfor %}
                     </div>
                 </div>
                 {% if 'admin' in permissions %}
-                <a href="/admin/toggle-champion" style="color:#888;font-size:10px;text-decoration:none;flex-shrink:0" title="Réactiver le champion">🏆</a>
+                <a href="/admin/appels-offres" style="color:#DAA520;font-size:10px;text-decoration:none;flex-shrink:0" title="Gérer">⚙️</a>
+                <a href="/admin/toggle-champion" style="color:#888;font-size:10px;text-decoration:none;flex-shrink:0;margin-left:4px" title="Réactiver champion">🏆</a>
                 {% endif %}
             </div>
         </div>
