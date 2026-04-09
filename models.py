@@ -2416,3 +2416,16 @@ def migrate_v23():
         try: conn.execute(f"ALTER TABLE rh_contracts ADD COLUMN {col} TEXT DEFAULT ''")
         except: pass
     conn.commit(); conn.close()
+
+def migrate_v24():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT DEFAULT '',
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    try: conn.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('show_champion', '1')")
+    except: pass
+    conn.commit(); conn.close()

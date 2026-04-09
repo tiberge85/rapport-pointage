@@ -124,6 +124,8 @@ from models import migrate_v22
 migrate_v22()
 from models import migrate_v23
 migrate_v23()
+from models import migrate_v24
+migrate_v24()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -193,7 +195,7 @@ def permission_required(perm):
 @app.context_processor
 def inject_globals():
     """Injecte les variables globales dans tous les templates."""
-    ctx = {'current_user': None, 'permissions': [], 'pending_count': 0, 'unread_messages': 0, 'caisse_pending': 0, 'weekly_champion': None}
+    ctx = {'current_user': None, 'permissions': [], 'pending_count': 0, 'unread_messages': 0, 'caisse_pending': 0, 'weekly_champion': None, 'show_champion': True}
     if 'user_id' in session:
         user = get_user_by_id(session['user_id'])
         if user:
@@ -213,15 +215,21 @@ def inject_globals():
                 except: pass
             # Weekly champion
             try:
-                from models import get_current_champion, update_weekly_champion, get_live_champion
+                from models import get_current_champion, update_weekly_champion, get_live_champion, get_db as _gdb_cp
                 update_weekly_champion()
                 champ = get_current_champion()
                 live = get_live_champion()
-                # Prefer stored champion, fall back to live leader
                 if champ:
                     ctx['weekly_champion'] = champ
                 elif live:
                     ctx['weekly_champion'] = live
+                # Check visibility setting
+                _sc = _gdb_cp()
+                try:
+                    vis = _sc.execute("SELECT value FROM app_settings WHERE key='show_champion'").fetchone()
+                    ctx['show_champion'] = (vis['value'] != '0') if vis else True
+                except: ctx['show_champion'] = True
+                _sc.close()
             except: pass
     else:
         ctx['can_edit'] = lambda module: False
@@ -928,6 +936,21 @@ def admin_permissions():
     update_role_permissions('admin', ALL_PERMISSIONS)
     flash("Permissions mises à jour", "success")
     return redirect(url_for('admin_page'))
+
+@app.route('/admin/toggle-champion')
+@permission_required('admin')
+def admin_toggle_champion():
+    conn = _gdb()
+    try:
+        current = conn.execute("SELECT value FROM app_settings WHERE key='show_champion'").fetchone()
+        new_val = '0' if (current and current['value'] == '1') else '1'
+        conn.execute("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('show_champion', ?)", (new_val,))
+        conn.commit()
+        msg = "Champion affiché" if new_val == '1' else "Champion masqué — Ticker appels d'offres activé"
+        flash(msg, "success")
+    except: pass
+    conn.close()
+    return redirect(request.referrer or '/dashboard')
 
 
 # ======================== LOGS D'ACTIVITÉ ========================
