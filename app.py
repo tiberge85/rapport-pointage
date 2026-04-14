@@ -138,6 +138,8 @@ from models import migrate_v29
 migrate_v29()
 from models import migrate_v30
 migrate_v30()
+from models import migrate_v31
+migrate_v31()
 from models import migrate_v27
 migrate_v27()
 from models import migrate_v28
@@ -146,6 +148,8 @@ from models import migrate_v29
 migrate_v29()
 from models import migrate_v30
 migrate_v30()
+from models import migrate_v31
+migrate_v31()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -885,11 +889,12 @@ def admin_page():
     # SMTP settings
     smtp = get_smtp_settings(session['user_id'])
     # Activity logs
-    admin_logs = get_activity_logs(limit=50)
+    admin_logs = get_activity_logs(limit=100)
     conn.close()
+    section = request.args.get('section', 'users')
     return render_template('admin.html', page='admin', users=users, stats=stats,
                           all_permissions=ALL_PERMISSIONS, role_perms=role_perms, perm_categories=PERM_CATEGORIES,
-                          tenders=tenders, tab='tenders', smtp=smtp, admin_logs=admin_logs)
+                          tenders=tenders, tab='tenders', smtp=smtp, admin_logs=admin_logs, section=section)
 
 @app.route('/admin/add', methods=['POST'])
 @permission_required('admin')
@@ -2631,7 +2636,8 @@ def devis_pdf(did):
     output = os.path.join(export_dir, f"{devis['reference']}.pdf")
     
     devis['date'] = devis.get('created_at', '')[:10]
-    generate_devis_pdf(devis, output)
+    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_wannygest.png"] if os.path.exists(os.path.join(BASE_DIR, n))), None)
+    generate_devis_pdf(devis, output, logo_path=logo_r)
     
     return send_file(output, as_attachment=True, download_name=f"{devis['reference']}.pdf")
 
@@ -2734,7 +2740,8 @@ def devis_preview(did):
     os.makedirs(export_dir, exist_ok=True)
     output = os.path.join(export_dir, f"preview_{devis['reference']}.pdf")
     devis['date'] = devis.get('created_at', '')[:10]
-    generate_devis_pdf(devis, output)
+    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_wannygest.png"] if os.path.exists(os.path.join(BASE_DIR, n))), None)
+    generate_devis_pdf(devis, output, logo_path=logo_r)
     return send_file(output, as_attachment=False, download_name=f"{devis['reference']}.pdf")
 
 
@@ -4604,9 +4611,13 @@ def kanban_move(tid, status):
 @app.route('/historique')
 @permission_required('admin')
 def historique():
-    table = request.args.get('table', '')
-    trail = get_audit_trail(table_name=table if table else None, limit=100)
-    return render_template('historique.html', page='historique', trail=trail, filter_table=table)
+    logs = get_activity_logs(limit=200)
+    conn = _gdb()
+    try:
+        trail = [dict(r) for r in conn.execute("SELECT * FROM audit_trail ORDER BY created_at DESC LIMIT 100").fetchall()]
+    except: trail = []
+    conn.close()
+    return render_template('historique.html', page='historique', trail=trail, logs=logs, filter_table=request.args.get('table',''))
 
 
 # ======================== TABLEAU DE BORD EXÉCUTIF ========================
@@ -5569,6 +5580,8 @@ def achats_page():
     data = {'tab': tab}
     data['stock_items'] = db_get_all('stock_items', order='name ASC')
     data['stock_total'] = sum((s.get('quantity',0) or 0) * (s.get('unit_price',0) or 0) for s in data['stock_items'])
+    try: data['stock_categories'] = [dict(r) for r in conn.execute("SELECT * FROM stock_categories ORDER BY name").fetchall()]
+    except: data['stock_categories'] = []
     data['fournisseurs'] = [dict(r) for r in conn.execute("SELECT * FROM achats_fournisseurs ORDER BY name").fetchall()]
     data['demandes'] = [dict(r) for r in conn.execute("""SELECT ad.*, u.full_name as requester FROM achats_demandes ad 
         LEFT JOIN users u ON ad.requested_by=u.id ORDER BY ad.created_at DESC LIMIT 50""").fetchall()]
@@ -5837,3 +5850,24 @@ def export_stock():
     os.makedirs(os.path.dirname(output), exist_ok=True)
     wb.save(output)
     return send_file(output, as_attachment=True, download_name='Stock_RAMYA.xlsx')
+
+@app.route('/achats/stock/category/add', methods=['POST'])
+@permission_required('comptabilite_edit')
+def stock_category_add():
+    name = request.form.get('name','').strip()
+    if name:
+        conn = _gdb()
+        try: conn.execute("INSERT INTO stock_categories (name, description) VALUES (?,?)", (name, request.form.get('description','')))
+        except: flash("Catégorie existe déjà","error")
+        conn.commit(); conn.close()
+        flash(f"Catégorie '{name}' créée","success")
+    return redirect('/achats?tab=stock')
+
+@app.route('/achats/stock/category/delete/<int:cid>')
+@permission_required('comptabilite_edit')
+def stock_category_delete(cid):
+    conn = _gdb()
+    conn.execute("DELETE FROM stock_categories WHERE id=?", (cid,))
+    conn.commit(); conn.close()
+    flash("Catégorie supprimée","success")
+    return redirect('/achats?tab=stock')

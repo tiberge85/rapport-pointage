@@ -2005,7 +2005,7 @@ from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.lib.colors import HexColor, white
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
@@ -2098,16 +2098,25 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
     
     # === HEADER ===
     s_svc = ParagraphStyle('services', fontSize=9, textColor=ORANGE, leading=13, alignment=TA_RIGHT)
+    
+    logo_el = Paragraph("<b>RAMYA<br/>TECHNOLOGIE &amp; INNOVATION</b>", 
+                ParagraphStyle('co', fontSize=12, fontName='Helvetica-Bold', textColor=TEAL))
+    if logo_path and os.path.exists(logo_path):
+        try:
+            logo_el = RLImage(logo_path, width=25*mm, height=25*mm)
+        except: pass
+    
     header_data = [
-        [Paragraph("<b>RAMYA<br/>TECHNOLOGIE &amp; INNOVATION</b>", 
-                    ParagraphStyle('co', fontSize=12, fontName='Helvetica-Bold', textColor=TEAL)),
+        [logo_el,
+         Paragraph("<b>RAMYA TECHNOLOGIE &amp; INNOVATION</b><br/><font size='7' color='#888'>Abidjan, Côte d'Ivoire · RCCM: CI-AB5-03-2017_A10-25092</font>", 
+                    ParagraphStyle('co', fontSize=11, fontName='Helvetica-Bold', textColor=TEAL, leading=14)),
          Paragraph("""<font color='#1a7a6d'>■</font> <i>Caméras de surveillance,</i><br/>
 <font color='#1a7a6d'>■</font> <i>Clôture électrique,</i><br/>
 <font color='#1a7a6d'>■</font> <i>Kit visiophone alarme anti-intrusion,</i><br/>
 <font color='#1a7a6d'>■</font> <i>Domotique, Poignées intelligentes</i>""", s_svc)]
     ]
-    ht = Table(header_data, colWidths=[90*mm, 90*mm])
-    ht.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+    ht = Table(header_data, colWidths=[30*mm, 75*mm, 75*mm])
+    ht.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE')]))
     story.append(ht)
     story.append(Spacer(1, 8*mm))
     

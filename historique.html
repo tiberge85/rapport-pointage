@@ -1,72 +1,43 @@
 {% extends "base.html" %}{% block title %}WannyGest - Historique{% endblock %}{% block content %}
-<style>
-.hist-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
-.filters{display:flex;gap:4px;flex-wrap:wrap}
-.filters a{padding:4px 10px;border-radius:6px;font-size:11px;text-decoration:none;border:1px solid #ddd;color:#555;font-weight:600}
-.filters a.active{background:#1a3a5c;color:#fff;border-color:#1a3a5c}
-.timeline{position:relative;padding-left:30px}
-.timeline::before{content:'';position:absolute;left:12px;top:0;bottom:0;width:2px;background:#e0e0e0}
-.tl-item{position:relative;margin-bottom:16px;padding:12px 16px;background:#fff;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,0.05);font-size:13px}
-.tl-item::before{content:'';position:absolute;left:-24px;top:16px;width:10px;height:10px;border-radius:50%;background:#1a3a5c;border:2px solid #fff;box-shadow:0 0 0 2px #1a3a5c}
-.tl-item.create::before{background:#2e7d32}.tl-item.update::before{background:#ff9800}
-.tl-item.delete::before{background:#c53030}.tl-item.status_change::before{background:#7b1fa2}
-.tl-time{font-size:10px;color:#888;margin-bottom:4px}
-.tl-user{font-weight:700;color:#1a3a5c}.tl-action{color:#555}
-.tl-table{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;background:#f0f4f8;color:#1a3a5c}
-.tl-change{margin-top:6px;padding:6px 10px;background:#f8faf9;border-radius:6px;font-size:12px;display:flex;gap:8px;align-items:center}
-.tl-old{color:#c53030;text-decoration:line-through}.tl-new{color:#2e7d32;font-weight:600}
-.tl-arrow{color:#888}
-.stats-bar{display:flex;gap:10px;margin-bottom:16px}
-.stat-pill{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;background:#f0f4f8;color:#1a3a5c}
-.stat-pill .n{font-weight:800;color:#e8672a}
-</style>
+<div class="page-header"><h1>🕓 Historique des modifications</h1></div>
 
-<div class="hist-header">
-    <h1 style="font-size:20px">🕓 Historique des modifications</h1>
-</div>
-
-<div class="stats-bar">
-    <div class="stat-pill"><span class="n">{{ trail|length }}</span> modifications</div>
-</div>
-
-<div class="filters">
-    <a href="/historique" class="{% if not filter_table %}active{% endif %}">Tout</a>
-    {% for t in ['clients','devis','invoices','prospects','employees','tasks','projects','payslips'] %}
-    <a href="/historique?table={{ t }}" class="{% if filter_table == t %}active{% endif %}">{{ t }}</a>
-    {% endfor %}
-</div>
+<!-- ACTIVITY LOGS -->
+<div class="card"><div class="card-header"><h3>📋 Journal d'activité</h3></div><div class="card-body" style="padding:0">
+{% if logs %}
+<div style="margin:10px;display:flex;justify-content:flex-end"><input type="text" id="searchLogs" placeholder="🔍 Rechercher..." onkeyup="filterTable('searchLogs','logsTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:250px"></div>
+<div class="table-wrap"><table id="logsTable">
+<thead><tr><th>Date</th><th>Utilisateur</th><th>Action</th><th>Détail</th><th>IP</th></tr></thead>
+<tbody>{% for l in logs %}<tr>
+<td style="font-size:11px;white-space:nowrap">{{ l.created_at[:16] if l.created_at else '-' }}</td>
+<td><strong>{{ l.user_name or '-' }}</strong></td>
+<td><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;
+{% if 'Connexion' in (l.action or '') %}background:#e8f5e9;color:#2e7d32
+{% elif 'Supprim' in (l.action or '') or 'Réinit' in (l.action or '') %}background:#fde8e8;color:#c53030
+{% elif 'Email' in (l.action or '') %}background:#fff3e0;color:#e8672a
+{% elif 'Import' in (l.action or '') %}background:#e3f2fd;color:#1565c0
+{% elif 'Paie' in (l.action or '') %}background:#e8f5e9;color:#1A7A6D
+{% elif 'Personnel' in (l.action or '') %}background:#f3e5f5;color:#7b1fa2
+{% else %}background:#f0f4f8;color:#1a3a5c{% endif %}">{{ l.action }}</span></td>
+<td style="font-size:11px;max-width:350px;overflow:hidden;text-overflow:ellipsis">{{ l.detail or '-' }}</td>
+<td style="font-size:10px;color:#888">{{ l.ip_address or '-' }}</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:30px">Aucune activité enregistrée. Les actions (connexion, ajout employé, création bulletin, etc.) apparaîtront ici.</p>{% endif %}
+</div></div>
 
 {% if trail %}
-<div class="timeline" style="margin-top:16px">
-    {% set prev_date = [None] %}
-    {% for a in trail %}
-    {% set date = a.created_at[:10] %}
-    {% if date != prev_date[0] %}
-    <div style="position:relative;margin-bottom:10px;font-size:11px;font-weight:700;color:#1a3a5c;padding:4px 0">📅 {{ date }}</div>
-    {% if prev_date.append(date) %}{% endif %}{% if prev_date.pop(0) or true %}{% endif %}
-    {% endif %}
-    <div class="tl-item {{ a.action }}">
-        <div class="tl-time">{{ a.created_at[11:16] }}</div>
-        <span class="tl-user">{{ a.user_name }}</span>
-        <span class="tl-action">
-            {% if a.action == 'create' %}a créé un enregistrement dans{% elif a.action == 'update' %}a modifié{% elif a.action == 'delete' %}a supprimé{% elif a.action == 'status_change' %}a changé le statut dans{% else %}{{ a.action }}{% endif %}
-        </span>
-        <span class="tl-table">{{ a.table_name }}</span>
-        {% if a.record_id %}<span style="font-size:10px;color:#888">#{{ a.record_id }}</span>{% endif %}
-        {% if a.old_value or a.new_value %}
-        <div class="tl-change">
-            {% if a.field_name %}<strong style="font-size:11px">{{ a.field_name }}:</strong>{% endif %}
-            {% if a.old_value %}<span class="tl-old">{{ a.old_value[:60] }}</span>{% endif %}
-            {% if a.old_value and a.new_value %}<span class="tl-arrow">→</span>{% endif %}
-            {% if a.new_value %}<span class="tl-new">{{ a.new_value[:60] }}</span>{% endif %}
-        </div>
-        {% endif %}
-    </div>
-    {% endfor %}
-</div>
-{% else %}
-<div class="card" style="margin-top:16px"><div class="card-body" style="text-align:center;color:#999;padding:40px">
-    🕓 Aucune modification enregistrée<br><span style="font-size:12px">Les actions sur les clients, devis, factures, employés seront tracées ici.</span>
+<!-- AUDIT TRAIL -->
+<div class="card" style="margin-top:14px"><div class="card-header"><h3>📝 Modifications de données</h3></div><div class="card-body" style="padding:0">
+<div class="table-wrap"><table>
+<thead><tr><th>Date</th><th>Utilisateur</th><th>Table</th><th>Action</th><th>Champ</th><th>Avant</th><th>Après</th></tr></thead>
+<tbody>{% for t in trail %}<tr>
+<td style="font-size:11px">{{ t.created_at[:16] if t.created_at else '-' }}</td>
+<td><strong>{{ t.user_name or '-' }}</strong></td>
+<td><span style="padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600;background:#f0f4f8;color:#1a3a5c">{{ t.table_name }}</span></td>
+<td>{{ t.action }}</td>
+<td style="font-size:11px">{{ t.field_name or '-' }}</td>
+<td style="font-size:11px;color:#c53030;text-decoration:line-through">{{ (t.old_value or '-')[:40] }}</td>
+<td style="font-size:11px;color:#2e7d32;font-weight:600">{{ (t.new_value or '-')[:40] }}</td>
+</tr>{% endfor %}</tbody></table></div>
 </div></div>
 {% endif %}
 {% endblock %}

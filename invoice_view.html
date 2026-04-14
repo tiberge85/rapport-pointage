@@ -1,24 +1,42 @@
 {% extends "base.html" %}{% block title %}WannyGest - Facture {{ inv.reference }}{% endblock %}{% block content %}
-<style>@media print{.no-print{display:none!important}.card{box-shadow:none!important}}</style>
+<style>
+@media print{
+    .no-print,.sidebar,.mobile-toggle,.mobile-overlay,.chat-fab,.notif-toast,#championBanner,[style*="ticker"]{display:none!important}
+    body{display:block!important;background:#fff!important}
+    .main{margin-left:0!important;padding:0!important;width:100%!important}
+    .card{box-shadow:none!important;border:none!important}
+    .inv-container{max-width:100%!important}
+}
+.inv-container{max-width:800px;margin:0 auto}
+</style>
 <div class="page-header no-print"><h1>💰 {{ inv.reference }}</h1>
 <div style="display:flex;gap:6px">
 <a href="/comptabilite/facture/edit/{{ inv.id }}" class="btn btn-primary btn-sm">✏️ Modifier</a>
 <button class="btn btn-outline btn-sm" onclick="window.print()">🖨️ Imprimer</button>
 <a href="/comptabilite" class="btn btn-outline btn-sm">← Retour</a>
 </div></div>
-<div class="card"><div class="card-body">
-    <div style="display:flex;justify-content:space-between;margin-bottom:16px">
-        <div><h2 style="margin:0;font-size:18px;color:#1a3a5c">FACTURE {{ inv.reference }}</h2>
-        <span class="badge-status {% if inv.status=='payee' %}sent{% elif inv.status in ('envoyee','en_attente_paiement') %}pending{% endif %}">{{ inv.status }}</span></div>
-        <div style="text-align:right;font-size:12px;color:#888">Créée le {{ inv.created_at[:10] if inv.created_at else '-' }}{% if inv.due_date %}<br>Échéance: <strong>{{ inv.due_date }}</strong>{% endif %}</div>
+<div class="inv-container"><div class="card"><div class="card-body">
+    <!-- HEADER RAMYA -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:3px solid #1A7A6D">
+        <div style="display:flex;align-items:center;gap:12px">
+            <img src="/static/logo_ramya.png" alt="RAMYA" style="height:50px" onerror="this.style.display='none'">
+            <div><strong style="font-size:14px;color:#1A7A6D">RAMYA TECHNOLOGIE & INNOVATION</strong><br><span style="font-size:10px;color:#888">Abidjan, Côte d'Ivoire · RCCM: CI-AB5-03-2017_A10-25092</span></div>
+        </div>
+        <div style="text-align:right"><h2 style="margin:0;font-size:18px;color:#1A7A6D">FACTURE</h2>
+        <div style="font-size:13px;font-weight:700">{{ inv.reference }}</div>
+        <span class="badge-status {% if inv.status=='payee' %}sent{% elif inv.status in ('envoyee','en_attente_paiement') %}pending{% endif %}" style="font-size:10px">{{ inv.status }}</span></div>
     </div>
-    <div class="rg" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;font-size:13px">
-        <div style="padding:12px;background:#f8faf9;border-radius:8px"><strong>Client :</strong> {{ inv.client_name }}<br><strong>Objet :</strong> {{ inv.objet or '-' }}</div>
+    <div style="display:flex;justify-content:space-between;margin-bottom:16px;font-size:12px;color:#888">
+        <span>Créée le {{ inv.created_at[:10] if inv.created_at else '-' }}</span>
+        {% if inv.due_date %}<span>Échéance: <strong style="color:#c53030">{{ inv.due_date }}</strong></span>{% endif %}
+    </div>
+    <div class="g2" style="margin-bottom:16px;font-size:13px">
+        <div style="padding:12px;background:#f8faf9;border-radius:8px;border-left:3px solid #1A7A6D"><strong>Client :</strong> {{ inv.client_name }}<br><strong>Objet :</strong> {{ inv.objet or '-' }}</div>
         <div style="padding:12px;background:#f8faf9;border-radius:8px"><strong>Paiement :</strong> {{ inv.payment_method or '-' }}{% if inv.devis_id and inv.devis_id != '0' %}<br><strong>Devis :</strong> #{{ inv.devis_id }}{% endif %}</div>
     </div>
     {% if inv_items %}
-    <table style="width:100%;font-size:12px;margin-bottom:12px"><thead><tr style="background:#4472C4;color:#fff"><th>Désignation</th><th>Qté</th><th style="text-align:right">P.U</th><th style="text-align:right">Total</th></tr></thead>
-    <tbody>{% for it in inv_items %}<tr style="{% if loop.index is divisibleby 2 %}background:#f8f8f8{% endif %}">
+    <table style="width:100%;font-size:12px;margin-bottom:12px"><thead><tr style="background:#1A7A6D;color:#fff"><th>Désignation</th><th>Qté</th><th style="text-align:right">P.U</th><th style="text-align:right">Total</th></tr></thead>
+    <tbody>{% for it in inv_items %}<tr style="{% if loop.index is divisibleby 2 %}background:#f8faf9{% endif %}">
     <td>{{ it.designation or it.get('name','') }}</td><td>{{ it.qty or it.get('quantity',1) }}</td>
     <td style="text-align:right">{{ '{:,.0f}'.format(it.get('price',0)) }}</td>
     <td style="text-align:right;font-weight:600">{{ '{:,.0f}'.format(it.get('total', it.get('price',0) * it.get('qty', it.get('quantity',1)))) }}</td>
@@ -27,9 +45,15 @@
     <div style="display:flex;justify-content:flex-end;gap:20px;padding:12px;background:#f0f4f8;border-radius:8px;font-size:13px">
         {% if inv.total_ht and inv.total_ht != '0' %}<div>HT: <strong>{{ '{:,.0f}'.format(inv.total_ht|float) }}</strong></div>
         <div>TVA: <strong>{{ '{:,.0f}'.format(inv.tva|float if inv.tva else 0) }}</strong></div>{% endif %}
-        <div style="font-size:18px;font-weight:800;color:#1a7a6d">TTC: {{ '{:,.0f}'.format(inv.amount) }} FCFA</div>
+        <div style="font-size:18px;font-weight:800;color:#1A7A6D">TTC: {{ '{:,.0f}'.format(inv.amount) }} FCFA</div>
     </div>
     {% if inv.description %}<div style="margin-top:12px;padding:10px;background:#f8faf9;border-radius:8px;font-size:12px"><strong>Notes :</strong> {{ inv.description }}</div>{% endif %}
     {% if inv.notes and inv.notes != inv.description %}<div style="margin-top:8px;padding:10px;background:#fff3e0;border-radius:8px;font-size:12px">{{ inv.notes }}</div>{% endif %}
-</div></div>
+    
+    <!-- Pied de page -->
+    <div style="margin-top:30px;padding-top:12px;border-top:2px solid #1A7A6D;display:flex;justify-content:space-between;font-size:10px;color:#888">
+        <div>RAMYA TECHNOLOGIE & INNOVATION<br>Abidjan, Côte d'Ivoire · Tél: 27 22 20 44 98<br>Email: techniqueramya@gmail.com</div>
+        <div style="text-align:right">RCCM: CI-AB5-03-2017_A10-25092<br>Régime: Réel simplifié d'imposition<br>Banque: NSIA — CI024 01028 051340550017 94</div>
+    </div>
+</div></div></div>
 {% endblock %}

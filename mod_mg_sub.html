@@ -2,7 +2,7 @@
 {% if page == 'fournitures' %}
 <div class="page-header"><h1>📦 Fournitures de bureau</h1></div>
 <div class="card"><div class="card-header"><h3>Fournitures</h3><button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Fourniture</button></div><div class="card-body">
-{% if items %}<div class="table-wrap"><table>
+{% if items %}<div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchMG" placeholder="🔍 Rechercher..." onkeyup="filterTable('searchMG','mgTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><div class="table-wrap"><table id="mgTable">
 <thead><tr><th>Article</th><th>Catégorie</th><th>Qté</th><th>Unité</th><th>Stock min</th></tr></thead>
 <tbody>{% for f in items %}<tr{% if f.quantity <= f.min_stock %} style="background:#fde8e8"{% endif %}><td><strong>{{ f.name }}</strong></td><td>{{ f.category or '-' }}</td><td>{{ f.quantity }}{% if f.quantity <= f.min_stock %} ⚠️{% endif %}</td><td>{{ f.unit or '-' }}</td><td>{{ f.min_stock }}</td></tr>{% endfor %}</tbody></table></div>
 {% else %}<p style="text-align:center;color:#999;padding:30px">Aucune fourniture</p>{% endif %}
@@ -15,12 +15,12 @@
 {% elif page == 'maintenance' %}
 <div class="page-header"><h1>🔧 Demandes de maintenance</h1></div>
 <div class="card"><div class="card-header"><h3>Interventions</h3><button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Demande</button></div><div class="card-body">
-{% if items %}<div class="table-wrap"><table>
+{% if items %}<div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchMaint" placeholder="🔍 Rechercher..." onkeyup="filterTable('searchMaint','maintTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><div class="table-wrap"><table id="maintTable">
 <thead><tr><th>Date</th><th>Équipement</th><th>Description</th><th>Priorité</th><th>Statut</th><th>Actions</th></tr></thead>
 <tbody>{% for m in items %}<tr>
 <td>{{ m.date_requested or m.created_at[:10] }}</td><td><strong>{{ m.equipment }}</strong></td><td style="font-size:12px">{{ m.description or '-' }}</td><td>{{ m.priority }}</td>
 <td><span class="badge-status {% if m.status=='termine' %}sent{% elif m.status=='en_cours' %}pending{% else %}{% endif %}">{{ m.status }}</span></td>
-<td>{% if m.status!='termine' %}<a href="/moyens-generaux/maintenance/{{ m.id }}/status/en_cours" class="btn btn-outline btn-sm">🔄</a><a href="/moyens-generaux/maintenance/{{ m.id }}/status/termine" class="btn btn-sm" style="background:#2e7d32;color:#fff">✅</a>{% endif %}</td>
+<td style="white-space:nowrap">{% if m.status!='termine' %}<a href="/moyens-generaux/maintenance/{{ m.id }}/status/en_cours" class="btn btn-outline btn-sm" style="margin-right:4px">🔄 En cours</a><a href="/moyens-generaux/maintenance/{{ m.id }}/status/termine" class="btn btn-sm" style="background:#2e7d32;color:#fff">✅ Terminé</a>{% else %}<span style="color:#2e7d32;font-size:11px">✅ Terminé</span>{% endif %}</td>
 </tr>{% endfor %}</tbody></table></div>
 {% else %}<p style="text-align:center;color:#999;padding:30px">Aucune demande</p>{% endif %}
 </div></div>
@@ -32,7 +32,7 @@
 {% elif page == 'vehicules' %}
 <div class="page-header"><h1>🚗 Parc véhicules</h1></div>
 <div class="card"><div class="card-header"><h3>Véhicules ({{ items|length }})</h3><button class="btn btn-orange btn-sm" onclick="document.getElementById('addM').classList.add('active')">+ Véhicule</button></div><div class="card-body">
-{% if items %}<div class="table-wrap"><table>
+{% if items %}<div style="margin-bottom:8px;display:flex;justify-content:flex-end"><input type="text" id="searchVeh" placeholder="🔍 Rechercher..." onkeyup="filterTable('searchVeh','vehTable')" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:220px"></div><div class="table-wrap"><table id="vehTable">
 <thead><tr><th>Immat.</th><th>Marque</th><th>Modèle</th><th>Affectation</th><th>Km</th><th>Assurance</th><th>Visite</th><th>Statut</th></tr></thead>
 <tbody>{% for v in items %}<tr><td><strong>{{ v.immatriculation }}</strong></td><td>{{ v.marque }}</td><td>{{ v.modele }}</td><td>{{ v.affectation or '-' }}</td><td>{{ '{:,}'.format(v.km) }}</td><td>{{ v.assurance_exp or '-' }}</td><td>{{ v.visite_exp or '-' }}</td><td><span class="badge-status {% if v.status=='disponible' %}sent{% else %}pending{% endif %}">{{ v.status }}</span></td></tr>{% endfor %}</tbody></table></div>
 {% else %}<p style="text-align:center;color:#999;padding:30px">Aucun véhicule</p>{% endif %}

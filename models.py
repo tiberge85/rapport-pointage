@@ -2544,3 +2544,23 @@ def migrate_v30():
         );
     ''')
     conn.commit(); conn.close()
+
+def migrate_v31():
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS stock_categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            description TEXT DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    # Pre-populate from existing stock_items categories
+    try:
+        cats = conn.execute("SELECT DISTINCT category FROM stock_items WHERE category IS NOT NULL AND category != ''").fetchall()
+        for cat in cats:
+            try: conn.execute("INSERT OR IGNORE INTO stock_categories (name) VALUES (?)", (cat[0],))
+            except: pass
+        conn.commit()
+    except: pass
+    conn.close()

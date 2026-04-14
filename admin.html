@@ -3,9 +3,16 @@
 {% block content %}
 <div class="page-header">
     <h1>👥 Administration</h1>
-    <p>Gestion des utilisateurs et des accès</p>
+</div>
+<div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap">
+    <a href="/admin?section=users" class="btn {% if not section or section=='users' %}btn-primary{% else %}btn-outline{% endif %} btn-sm">👤 Utilisateurs</a>
+    <a href="/admin?section=roles" class="btn {% if section=='roles' %}btn-primary{% else %}btn-outline{% endif %} btn-sm">🔑 Rôles & Permissions</a>
+    <a href="/admin?section=historique" class="btn {% if section=='historique' %}btn-primary{% else %}btn-outline{% endif %} btn-sm">📋 Historique</a>
+    <a href="/admin?section=tenders" class="btn {% if section=='tenders' %}btn-primary{% else %}btn-outline{% endif %} btn-sm">📡 Appels d'offres</a>
+    <a href="/admin?section=smtp" class="btn {% if section=='smtp' %}btn-primary{% else %}btn-outline{% endif %} btn-sm">📧 SMTP</a>
 </div>
 
+{% if not section or section == 'users' %}
 <!-- Users -->
 <div class="card">
     <div class="card-header">
@@ -44,6 +51,8 @@
     </div>
 </div>
 
+{% endif %}
+{% if section == "roles" %}
 <!-- Permissions -->
 <div class="card">
     <div class="card-header"><h3>🔑 Permissions par rôle</h3>
@@ -195,6 +204,8 @@
     </div>
 </div>
 
+{% endif %}
+{% if section == "tenders" %}
 <!-- APPELS D'OFFRES MANAGEMENT -->
 {% if tenders is defined or tab == 'tenders' %}
 <div class="card" style="margin-top:16px"><div class="card-header"><h3>📡 Appels d'offres — Ticker</h3>
@@ -230,6 +241,8 @@
 <div style="margin-top:12px"><a href="/admin/appels-offres" class="btn btn-outline btn-sm">📡 Gérer les appels d'offres du ticker</a></div>
 {% endif %}
 
+{% endif %}
+{% if section == "smtp" %}
 <!-- SMTP SETTINGS -->
 <div class="card" style="margin-top:16px"><div class="card-header"><h3>📧 Paramètres SMTP (envoi emails)</h3></div>
 <div class="card-body">
@@ -247,6 +260,8 @@
 </form>
 </div></div>
 
+{% endif %}
+{% if section == "historique" %}
 <!-- HISTORIQUE / LOGS -->
 <div class="card" style="margin-top:16px"><div class="card-header"><h3>📋 Historique d'activité</h3></div>
 <div class="card-body" style="padding:0">
@@ -271,4 +286,5 @@
 {% endif %}
 </div></div>
 
+{% endif %}
 {% endblock %}
