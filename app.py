@@ -3306,12 +3306,10 @@ def rh_paie_edit(pid):
     employees = get_all_employees()
     return render_template('rh_paie_view.html', page='paie', p=p, employees=employees, edit_mode=True)
 
-@app.route('/rh/paie/<int:pid>/pdf')
-@permission_required('fichiers')
-def rh_paie_pdf(pid):
-    """Bulletin de paie PDF — RAMYA TECHNOLOGIE & INNOVATION."""
+def _generate_bulletin_pdf(pid):
+    """Generate bulletin PDF and return file path."""
     p = get_payslip_detail_v2(pid)
-    if not p: flash("Non trouvé","error"); return redirect(url_for('rh_paie'))
+    if not p: return None
     
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
@@ -3350,8 +3348,17 @@ def rh_paie_pdf(pid):
     
     logo_el = Paragraph("<b>RAMYA</b>", ParagraphStyle('lg',fontSize=14,fontName='Helvetica-Bold',textColor=white))
     if logo_path:
-        try: logo_el = Image(logo_path, width=30*mm, height=12*mm)
-        except: pass
+        try:
+            from PIL import Image as PILImage
+            img = PILImage.open(logo_path)
+            iw, ih = img.size
+            # Keep aspect ratio, max height 14mm
+            max_h = 14*mm
+            ratio = iw / ih
+            logo_el = Image(logo_path, width=max_h*ratio, height=max_h)
+        except:
+            try: logo_el = Image(logo_path, width=14*mm, height=14*mm)
+            except: pass
     
     # Period format
     period_display = p['period']
@@ -3507,7 +3514,38 @@ def rh_paie_pdf(pid):
     story.extend([st, Spacer(1,6*mm)])
     story.append(Paragraph("Ce bulletin de paie doit être conservé sans limitation de durée (Art. 32.4 du Code du Travail de Côte d'Ivoire)", ParagraphStyle('f',fontSize=7,alignment=TA_CENTER,textColor=GREY)))
     
+    # === SIGNATURE if signed ===
+    if p.get('signed_at') and p.get('signature_data'):
+        story.append(Spacer(1, 4*mm))
+        sig_row = [[
+            Paragraph(f"<b>Signature de l'employé :</b> {p['signed_by']}<br/><font size='7' color='#888'>Signé le {p['signed_at']}</font>", sc),
+        ]]
+        # Add signature image
+        try:
+            import base64, io as _io
+            sig_b64 = p['signature_data'].split(',')[1] if ',' in p['signature_data'] else p['signature_data']
+            sig_bytes = base64.b64decode(sig_b64)
+            sig_buf = _io.BytesIO(sig_bytes)
+            sig_img = Image(sig_buf, width=50*mm, height=18*mm)
+            sig_row[0].append(sig_img)
+        except:
+            sig_row[0].append(Paragraph("✅ Signé numériquement", scb))
+        sig_t = Table(sig_row, colWidths=[pw*0.5, pw*0.5])
+        sig_t.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('BACKGROUND',(0,0),(-1,-1),HexColor('#f0fff0')),
+            ('BOX',(0,0),(-1,-1),0.5,HexColor('#2e7d32')),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),('LEFTPADDING',(0,0),(-1,-1),8)]))
+        story.append(sig_t)
+    
     doc.build(story)
+    return output
+
+@app.route('/rh/paie/<int:pid>/pdf')
+@permission_required('fichiers')
+def rh_paie_pdf(pid):
+    output = _generate_bulletin_pdf(pid)
+    if not output:
+        flash("Non trouvé", "error")
+        return redirect(url_for('rh_paie'))
+    p = get_payslip_detail_v2(pid)
     return send_file(output, as_attachment=True, download_name=f"Bulletin_{p['period']}_{p['employee_name']}.pdf")
 
 @app.route('/rh/paie/<int:pid>/view')
@@ -3574,64 +3612,12 @@ def rh_paie_email(pid):
             smtp = get_admin_smtp()
             return render_template('rh_paie_view.html', page='paie', p=p, send_email=True, smtp=smtp)
         
-        # Generate PDF directly
-        pdf_dir = os.path.join(app.config['UPLOAD_FOLDER'], 'paie_email')
-        os.makedirs(pdf_dir, exist_ok=True)
-        pdf_path = os.path.join(pdf_dir, f"bulletin_{p['period']}_{p['employee_name'].replace(' ','_')}.pdf")
-        
+        # Generate full bulletin PDF
         try:
-            # Generate PDF using the same logic as rh_paie_pdf
-            from reportlab.lib.pagesizes import A4
-            from reportlab.lib.units import mm
-            from reportlab.lib.colors import HexColor, white
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
-            from reportlab.lib.styles import ParagraphStyle
-            from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
-            
-            doc = SimpleDocTemplate(pdf_path, pagesize=A4, leftMargin=12*mm, rightMargin=12*mm, topMargin=10*mm, bottomMargin=10*mm)
-            VERT = HexColor('#1A7A6D'); VERT_F = HexColor('#0D6B5E')
-            ORANGE = HexColor('#e8672a'); ORANGE_L = HexColor('#fff3e0')
-            DARK = HexColor('#333'); GREY = HexColor('#888'); LIGHT = HexColor('#f8faf9'); VERT_L = HexColor('#e0f0ee')
-            
-            sw = ParagraphStyle('sw', fontSize=8, textColor=white)
-            swb = ParagraphStyle('swb', fontSize=8, fontName='Helvetica-Bold', textColor=white)
-            sc = ParagraphStyle('sc', fontSize=8, leading=10, textColor=DARK)
-            scb = ParagraphStyle('scb', fontSize=8, fontName='Helvetica-Bold', textColor=DARK)
-            sr = ParagraphStyle('sr', fontSize=8, alignment=TA_RIGHT, textColor=DARK)
-            srb = ParagraphStyle('srb', fontSize=8, fontName='Helvetica-Bold', alignment=TA_RIGHT, textColor=DARK)
-            
-            story = []
-            pw = doc.width
-            def g(k, d=0): return p.get(k, d) or d
-            def f(k): return g(k, 0)
-            def fmt(v): return f"{v:,.0f}" if isinstance(v, (int, float)) else str(v)
-            
-            # Simple header
-            story.append(Paragraph(f"<b>RAMYA TECHNOLOGIE & INNOVATION</b> — Bulletin de paie {p['period']}", 
-                ParagraphStyle('h', fontSize=12, fontName='Helvetica-Bold', textColor=VERT)))
-            story.append(Spacer(1, 4*mm))
-            story.append(Paragraph(f"<b>{p['employee_name']}</b> — {g('position','-')} — Matricule: {g('matricule','-')}", sc))
-            story.append(Paragraph(f"Net à payer: <b>{fmt(g('net_salary'))}</b> FCFA", 
-                ParagraphStyle('net', fontSize=14, fontName='Helvetica-Bold', textColor=VERT)))
-            story.append(Spacer(1, 4*mm))
-            
-            # Simple table with key info
-            data = [
-                ['Salaire de base', fmt(f('base_salary')), 'CNPS salarié', fmt(f('cnps_employee'))],
-                ['Prime transport', fmt(f('prime_transport')), 'ITS', fmt(f('its'))],
-                ['Prime ancienneté', fmt(f('prime_anciennete')), 'Assurance', fmt(f('insurance_amount'))],
-                ['Prime rendement', fmt(f('prime_rendement')), 'Déductions', fmt(f('deductions'))],
-                ['Brut', fmt(g('net_salary',0) + f('cnps_employee') + f('its') + f('insurance_amount') + f('deductions')), 'Total retenues', fmt(f('cnps_employee') + f('its') + f('insurance_amount') + f('deductions'))],
-            ]
-            t = Table(data, colWidths=[pw*0.3, pw*0.2, pw*0.3, pw*0.2])
-            t.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-1), 0.5, GREY),
-                ('BACKGROUND', (0,-1), (-1,-1), VERT_L),
-                ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-            ]))
-            story.append(t)
-            
-            doc.build(story)
+            pdf_path = _generate_bulletin_pdf(pid)
+            if not pdf_path:
+                flash("Erreur génération PDF: bulletin non trouvé", "error")
+                return redirect(url_for('rh_paie'))
         except Exception as pdf_err:
             flash(f"Erreur génération PDF: {str(pdf_err)}", "error")
             return redirect(url_for('rh_paie'))

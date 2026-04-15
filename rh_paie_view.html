@@ -2,7 +2,7 @@
 <style>
 .slip{max-width:750px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);overflow:hidden}
 .slip-hdr{background:#1A7A6D;color:#fff;padding:16px 20px;display:flex;justify-content:space-between;align-items:center}
-.slip-hdr img{height:40px;margin-right:12px}
+.slip-hdr img{height:40px;width:auto;margin-right:12px;object-fit:contain}
 .slip-body{padding:18px}
 .emp-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid #ddd;border-radius:8px;margin-bottom:14px;font-size:11px;overflow:hidden}
 .emp-cell{padding:6px 10px;border-bottom:1px solid #eee;border-right:1px solid #eee;background:#f8faf9}
@@ -18,7 +18,7 @@ th{text-align:left;font-weight:600}
 .actions-bar{display:flex;gap:8px;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
 .badge{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
 .badge.brouillon{background:#e3f2fd;color:#1565c0}.badge.valide{background:#e8f5e9;color:#2e7d32}.badge.envoye{background:#fff3e0;color:#e8672a}
-@media print{.actions-bar,.page-header{display:none!important}.main{padding:0!important;margin:0!important}.slip{box-shadow:none;border-radius:0;max-width:100%}}
+@media print{.actions-bar,.page-header{display:none!important}.main{padding:0!important;margin:0!important}.slip{box-shadow:none;border-radius:0;max-width:100%}.slip-hdr img{height:35px!important;width:auto!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.slip-hdr,.sec-hdr,.brut-bar,.net-bar{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style>
 {% set fmt = '{:,.0f}'.format %}
 {% set g = p.get %}
