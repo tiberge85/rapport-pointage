@@ -1,10 +1,7 @@
 {% extends "base.html" %}
-{% block title %}RAMYA - Clients{% endblock %}
+{% block title %}RAMYA - Relation Client{% endblock %}
 {% block content %}
-<div class="page-header">
-    <h1>🏢 Relation Client</h1>
-</div>
-
+<div class="page-header"><h1>🏢 Relation Client</h1></div>
 <div class="card">
     <div class="card-header">
         <h3>Clients ({{ clients|length }})</h3>
@@ -17,15 +14,22 @@
         {% if clients %}
         <div style="margin:10px;display:flex;justify-content:flex-end"><input type="text" id="searchCli" placeholder="🔍 Rechercher..." onkeyup="searchClients()" style="padding:7px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:12px;width:250px"></div>
         <div class="table-wrap"><table id="cliTable">
-            <thead><tr><th>Société</th><th>Point focal</th><th>Téléphone</th><th>Email</th><th>Adresse</th><th>Actions</th></tr></thead>
+            <thead><tr><th style="width:40px">N°</th><th>Client / Entreprise</th><th>Point focal</th><th>Téléphone</th><th>Email</th><th>Statut</th><th>Actions</th></tr></thead>
             <tbody>
-            {% for c in clients %}
+            {% for c in clients|sort(attribute='name') %}
             <tr class="cli-row">
+                <td style="text-align:center;font-weight:600;color:#888">{{ loop.index }}</td>
                 <td><a href="/clients/{{ c.id }}" style="color:#1a3a5c;font-weight:700;text-decoration:none">{{ c.name }}</a></td>
                 <td>{{ c.contact_name or '-' }}</td>
                 <td>{{ c.tel or '-' }}</td>
                 <td style="font-size:11px">{{ c.email or '-' }}</td>
-                <td style="font-size:11px">{{ c.address or '-' }}</td>
+                <td>{% set st = c.client_status or 'entreprise_sans_contrat' %}
+                <span style="padding:2px 6px;border-radius:8px;font-size:9px;font-weight:600;white-space:nowrap;
+                {% if 'gros' in st %}background:#f3e5f5;color:#7b1fa2
+                {% elif 'particulier' in st %}background:#fff3e0;color:#e8672a
+                {% elif 'sous_contrat' in st %}background:#e8f5e9;color:#2e7d32
+                {% else %}background:#f0f4f8;color:#555{% endif %}">
+                {{ st|replace('_',' ')|replace('sous','sous ')|capitalize }}</span></td>
                 <td style="white-space:nowrap">
                     <a href="/clients/{{ c.id }}" class="btn btn-sm btn-outline" style="font-size:9px">👁️</a>
                     <a href="/clients/edit/{{ c.id }}" class="btn btn-sm btn-outline" style="font-size:9px">✏️</a>
@@ -44,7 +48,7 @@
         var cliCurrentPage=1, cliPerPage=25;
         function cliPaginate(){
             var rows=document.querySelectorAll('.cli-row');
-            var visible=[]; rows.forEach(function(r){if(r.style.display!='none'||!r.dataset.hidden) visible.push(r)});
+            var visible=[]; rows.forEach(function(r){if(!r.dataset.hidden) visible.push(r)});
             var total=visible.length, pages=Math.ceil(total/cliPerPage)||1;
             if(cliCurrentPage>pages)cliCurrentPage=pages;if(cliCurrentPage<1)cliCurrentPage=1;
             rows.forEach(function(r){r.style.display='none'});
@@ -56,7 +60,6 @@
             var f=document.getElementById('searchCli').value.toLowerCase();
             document.querySelectorAll('.cli-row').forEach(function(r){
                 r.dataset.hidden=r.textContent.toLowerCase().includes(f)?'':'1';
-                r.style.display='';
             });
             cliCurrentPage=1;cliPaginate();
         }
@@ -69,39 +72,45 @@
 </div>
 
 <!-- Modal ajout -->
-<div class="modal-bg" id="addModal">
-    <div class="modal" style="max-width:550px">
-        <h3>➕ Ajouter un client</h3>
-        <form method="post" action="/clients/add">
-            <div class="form-group"><label>Société *</label><input type="text" name="name" required placeholder="Nom de l'entreprise"></div>
-            <div class="form-row">
-                <div class="form-group"><label>Point focal</label><input type="text" name="contact_name" placeholder="Nom du responsable"></div>
-                <div class="form-group"><label>Téléphone</label><input type="text" name="tel" placeholder="07 XX XX XX XX"></div>
+<div class="modal-bg" id="addModal"><div class="modal" style="max-width:550px">
+    <h3>➕ Ajouter un client</h3>
+    <form method="post" action="/clients/add">
+        <div class="form-group"><label>Société / Nom *</label><input type="text" name="name" required placeholder="Nom de l'entreprise ou du particulier"></div>
+        <div class="form-row">
+            <div class="form-group"><label>Point focal</label><input type="text" name="contact_name" placeholder="Nom du responsable"></div>
+            <div class="form-group"><label>Téléphone</label><input type="text" name="tel" placeholder="07 XX XX XX XX"></div>
+        </div>
+        <div class="form-row">
+            <div class="form-group"><label>Email</label><input type="email" name="email"></div>
+            <div class="form-group"><label>Statut</label>
+                <select name="client_status">
+                    <option value="entreprise_sans_contrat">Entreprise sans contrat</option>
+                    <option value="entreprise_sous_contrat">Entreprise sous contrat</option>
+                    <option value="particulier_sans_contrat">Particulier sans contrat</option>
+                    <option value="particulier_sous_contrat">Particulier sous contrat</option>
+                    <option value="gros_client_sans_contrat">Gros client sans contrat</option>
+                    <option value="gros_client_sous_contrat">Gros client sous contrat</option>
+                </select>
             </div>
-            <div class="form-row">
-                <div class="form-group"><label>Email</label><input type="email" name="email"></div>
-                <div class="form-group"><label>Adresse</label><input type="text" name="address"></div>
-            </div>
-            <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px"></textarea></div>
-            <div style="display:flex;gap:8px;justify-content:flex-end">
-                <button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
-                <button type="submit" class="btn btn-primary">Ajouter</button>
-            </div>
-        </form>
-    </div>
-</div>
+        </div>
+        <div class="form-group"><label>Adresse</label><input type="text" name="address"></div>
+        <div class="form-group"><label>Notes</label><textarea name="notes" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px"></textarea></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
+            <button type="submit" class="btn btn-primary">Ajouter</button>
+        </div>
+    </form>
+</div></div>
 
 <!-- Import Modal -->
-<div class="modal-bg" id="importM">
-    <div class="modal" style="max-width:450px">
-        <h3>📥 Importer des clients (Excel)</h3>
-        <form method="post" action="/clients/import" enctype="multipart/form-data">
-            <div class="form-group"><label>Fichier Excel (.xlsx)</label><input type="file" name="file" accept=".xlsx,.xls" required style="padding:6px;border:1.5px solid #ddd;border-radius:7px;width:100%"></div>
-            <div style="display:flex;gap:8px;justify-content:flex-end">
-                <button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
-                <button type="submit" class="btn btn-primary">📥 Importer</button>
-            </div>
-        </form>
-    </div>
-</div>
+<div class="modal-bg" id="importM"><div class="modal" style="max-width:450px">
+    <h3>📥 Importer des clients (Excel)</h3>
+    <form method="post" action="/clients/import" enctype="multipart/form-data">
+        <div class="form-group"><label>Fichier Excel</label><input type="file" name="file" accept=".xlsx,.xls" required style="padding:6px;border:1.5px solid #ddd;border-radius:7px;width:100%"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
+            <button type="submit" class="btn btn-primary">📥 Importer</button>
+        </div>
+    </form>
+</div></div>
 {% endblock %}

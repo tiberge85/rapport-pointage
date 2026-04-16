@@ -20,10 +20,10 @@
                 <div class="form-group"><label>N° CNPS</label><input type="text" name="cnps_number" value="{{ client.cnps_number or '' }}"></div>
             </div>
 
-            <h4 style="font-size:12px;color:#e8672a;margin:10px 0 6px;border-bottom:1px solid #e8672a;padding-bottom:3px">👤 Contact principal</h4>
+            <h4 style="font-size:12px;color:#e8672a;margin:10px 0 6px;border-bottom:1px solid #e8672a;padding-bottom:3px">👤 Point focal</h4>
             <div class="form-row">
                 <div class="form-group"><label>Titre</label><select name="contact_title"><option value="">—</option><option {% if client.contact_title=='M.' %}selected{% endif %}>M.</option><option {% if client.contact_title=='Mme' %}selected{% endif %}>Mme</option><option {% if client.contact_title=='Dr' %}selected{% endif %}>Dr</option><option {% if client.contact_title=='Ing.' %}selected{% endif %}>Ing.</option></select></div>
-                <div class="form-group"><label>Nom du contact</label><input type="text" name="contact_name" value="{{ client.contact_name or '' }}"></div>
+                <div class="form-group"><label>Nom du point focal</label><input type="text" name="contact_name" value="{{ client.contact_name or '' }}"></div>
             </div>
             <div class="form-row">
                 <div class="form-group"><label>Téléphone 1</label><input type="text" name="tel" value="{{ client.tel or '' }}"></div>
@@ -38,6 +38,13 @@
             <div class="form-row">
                 <div class="form-group"><label>Source</label><select name="source"><option value="">—</option>{% for s in ['prospect','recommandation','salon','site_web','appel','partenaire'] %}<option {% if client.source==s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div>
                 <div class="form-group"><label>Statut</label><select name="status"><option {% if client.status=='actif' %}selected{% endif %}>actif</option><option {% if client.status=='inactif' %}selected{% endif %}>inactif</option><option {% if client.status=='vip' %}selected{% endif %}>vip</option></select></div>
+            </div>
+            <div class="form-group"><label>Type de client</label>
+                <select name="client_status">
+                    {% for val,label in [('entreprise_sans_contrat','Entreprise sans contrat'),('entreprise_sous_contrat','Entreprise sous contrat'),('particulier_sans_contrat','Particulier sans contrat'),('particulier_sous_contrat','Particulier sous contrat'),('gros_client_sans_contrat','Gros client sans contrat'),('gros_client_sous_contrat','Gros client sous contrat')] %}
+                    <option value="{{ val }}" {% if client.client_status == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
             </div>
             <div class="form-row">
                 <div class="form-group"><label>Conditions paiement</label><select name="payment_terms"><option value="">—</option>{% for p in ['comptant','30 jours','60 jours','90 jours'] %}<option {% if client.payment_terms==p %}selected{% endif %}>{{ p }}</option>{% endfor %}</select></div>

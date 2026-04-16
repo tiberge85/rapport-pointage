@@ -2678,3 +2678,18 @@ def migrate_v37():
     try: conn.execute("ALTER TABLE employees ADD COLUMN signature_file TEXT DEFAULT ''")
     except: pass
     conn.commit(); conn.close()
+
+def migrate_v38():
+    """Calendar events - add columns to existing table."""
+    conn = get_db()
+    for col, typ in [('event_time','TEXT DEFAULT ""'),('category','TEXT DEFAULT "autre"'),('created_by','INTEGER DEFAULT 0')]:
+        try: conn.execute(f"ALTER TABLE calendar_events ADD COLUMN {col} {typ}")
+        except: pass
+    conn.commit(); conn.close()
+
+def migrate_v39():
+    """Add status to clients."""
+    conn = get_db()
+    try: conn.execute("ALTER TABLE clients ADD COLUMN client_status TEXT DEFAULT 'entreprise_sans_contrat'")
+    except: pass
+    conn.commit(); conn.close()

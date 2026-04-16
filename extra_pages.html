@@ -559,81 +559,120 @@ new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes'
 {% endif %}
 
 {% elif page == 'rh_calendrier' %}
-<div class="page-header"><h1>📅 Calendrier RH</h1>
-<div style="display:flex;gap:6px">
-    <a href="/rh/calendrier?year={{ year }}&month={{ month - 1 if month > 1 else 12 }}" class="btn btn-outline btn-sm">◀</a>
+<div class="page-header"><h1>📅 Calendrier</h1>
+<div style="display:flex;gap:6px;align-items:center">
+    <a href="/rh/calendrier?year={{ year }}&month={{ month - 1 }}" class="btn btn-outline btn-sm">◀</a>
     <span style="padding:4px 14px;font-weight:700;font-size:14px;color:#1a3a5c">
     {% set months = ['','Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'] %}
     {{ months[month] }} {{ year }}
     </span>
-    <a href="/rh/calendrier?year={{ year }}&month={{ month + 1 if month < 12 else 1 }}" class="btn btn-outline btn-sm">▶</a>
+    <a href="/rh/calendrier?year={{ year }}&month={{ month + 1 }}" class="btn btn-outline btn-sm">▶</a>
+    <button class="btn btn-primary btn-sm" onclick="document.getElementById('addEvtM').classList.add('active')" style="margin-left:auto">+ Événement</button>
 </div></div>
+
 <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
-    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#fff3e0;color:#e8672a">🏖️ Congés</span>
-    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#fde8e8;color:#c53030">❌ Absences</span>
-    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#f3e5f5;color:#7b1fa2">🎂 Anniversaires</span>
-    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#fff3e0;color:#ff9800">📄 Contrats</span>
-    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#e3f2fd;color:#1565c0">📚 Formations</span>
+    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#e3f2fd;color:#1565c0">📋 Réunion</span>
+    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#fff3e0;color:#e8672a">⏰ Rappel</span>
+    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#fde8e8;color:#c53030">🔴 Deadline</span>
+    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#e8f5e9;color:#2e7d32">📍 Visite</span>
+    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#f3e5f5;color:#7b1fa2">📚 Formation</span>
+    <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:#fff3e0;color:#ff9800">👤 Personnel</span>
 </div>
+
+<div class="g21">
 <div class="card"><div class="card-body" style="padding:0;overflow-x:auto">
 <div id="calGrid" style="display:grid;grid-template-columns:repeat(7,1fr);border:1px solid #e0e0e0"></div>
 </div></div>
+
+<!-- Upcoming events sidebar -->
+<div class="card"><div class="card-header"><h3>📋 Événements à venir</h3></div>
+<div class="card-body" style="padding:0;max-height:500px;overflow-y:auto">
+{% set today_str = [] %}
+{% for ev in all_events %}
+{% set evdate = ev.start_date or ev.event_date or '' %}{% if evdate %}
+<div style="padding:8px 12px;border-bottom:1px solid #f0f0f0;display:flex;gap:8px;align-items:flex-start">
+    <div style="min-width:40px;text-align:center;padding:4px;background:{{ ev.color or '#1A7A6D' }};color:#fff;border-radius:6px;font-size:9px;font-weight:700;line-height:1.2">
+        {{ evdate[8:10] }}<br>{{ months[evdate[5:7]|int][:3] }}
+    </div>
+    <div style="flex:1">
+        <div style="font-size:12px;font-weight:700">{{ ev.title }}</div>
+        {% if ev.event_time %}<div style="font-size:10px;color:#1565c0">🕐 {{ ev.event_time }}</div>{% endif %}
+        {% if ev.description %}<div style="font-size:10px;color:#888">{{ ev.description[:60] }}</div>{% endif %}
+    </div>
+    <a href="/rh/calendrier/delete/{{ ev.id }}" class="btn btn-sm" style="color:#c53030;font-size:9px" onclick="return confirm('Supprimer ?')">🗑️</a>
+</div>
+{% endif %}
+{% endfor %}
+{% if not all_events %}<p style="text-align:center;color:#999;padding:20px;font-size:12px">Aucun événement</p>{% endif %}
+</div></div>
+</div>
+
+<!-- Add Event Modal -->
+<div class="modal-bg" id="addEvtM"><div class="modal" style="max-width:480px"><h3>📅 Nouvel événement</h3>
+<form method="post" action="/rh/calendrier/add">
+<input type="hidden" name="year" value="{{ year }}"><input type="hidden" name="month" value="{{ month }}">
+<div class="form-group"><label>Titre *</label><input type="text" name="title" required placeholder="Réunion client, Relance devis..."></div>
+<div class="form-row">
+    <div class="form-group"><label>Date début *</label><input type="date" name="event_date" required></div>
+    <div class="form-group"><label>Date fin</label><input type="date" name="end_date"></div>
+</div>
+<div class="form-row">
+    <div class="form-group"><label>Heure</label><input type="time" name="event_time"></div>
+    <div class="form-group"><label>Catégorie</label><select name="category">
+        <option value="reunion">📋 Réunion</option><option value="rappel">⏰ Rappel</option>
+        <option value="deadline">🔴 Deadline</option><option value="visite">📍 Visite client</option>
+        <option value="formation">📚 Formation</option><option value="personnel">👤 Personnel</option>
+        <option value="autre">📌 Autre</option>
+    </select></div>
+</div>
+<div class="form-group"><label>Description</label><textarea name="description" rows="2" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px" placeholder="Détails..."></textarea></div>
+<div style="display:flex;gap:8px;justify-content:flex-end">
+    <button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
+    <button type="submit" class="btn btn-primary">📅 Créer</button>
+</div>
+</form></div></div>
+
 <script>
 (function(){
     var events = {{ events|safe }};
     var year = {{ year }}, month = {{ month }};
     var days = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
     var grid = document.getElementById('calGrid');
-    
-    // Header
     days.forEach(function(d){
         var h = document.createElement('div');
         h.style.cssText = 'padding:8px;text-align:center;font-weight:700;font-size:11px;background:#1a3a5c;color:#fff;border:1px solid #ccc';
-        h.textContent = d;
-        grid.appendChild(h);
+        h.textContent = d; grid.appendChild(h);
     });
-    
     var firstDay = new Date(year, month-1, 1).getDay();
-    firstDay = firstDay === 0 ? 6 : firstDay - 1; // Monday first
+    firstDay = firstDay === 0 ? 6 : firstDay - 1;
     var daysInMonth = new Date(year, month, 0).getDate();
     var today = new Date();
-    
-    // Empty cells
-    for(var i=0; i<firstDay; i++){
-        var cell = document.createElement('div');
-        cell.style.cssText = 'min-height:90px;background:#f5f5f5;border:1px solid #eee';
-        grid.appendChild(cell);
-    }
-    
-    // Day cells
-    for(var d=1; d<=daysInMonth; d++){
-        var cell = document.createElement('div');
-        var dateStr = year+'-'+String(month).padStart(2,'0')+'-'+String(d).padStart(2,'0');
-        var isToday = today.getFullYear()==year && today.getMonth()+1==month && today.getDate()==d;
-        cell.style.cssText = 'min-height:90px;padding:4px;border:1px solid #eee;font-size:11px;'+(isToday?'background:#e8f5e9;border-color:#1A7A6D':'');
-        
-        var num = document.createElement('div');
-        num.style.cssText = 'font-weight:700;font-size:13px;margin-bottom:2px;'+(isToday?'color:#1A7A6D':'color:#333');
-        num.textContent = d;
-        cell.appendChild(num);
-        
-        // Find events for this day
+    for(var i=0;i<firstDay;i++){var c=document.createElement('div');c.style.cssText='min-height:80px;background:#f5f5f5;border:1px solid #eee';grid.appendChild(c)}
+    for(var d=1;d<=daysInMonth;d++){
+        var cell=document.createElement('div');
+        var ds=year+'-'+String(month).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+        var isT=today.getFullYear()==year&&today.getMonth()+1==month&&today.getDate()==d;
+        cell.style.cssText='min-height:80px;padding:3px;border:1px solid #eee;font-size:10px;cursor:pointer;'+(isT?'background:#e8f5e9;border-color:#1A7A6D':'');
+        var num=document.createElement('div');num.style.cssText='font-weight:700;font-size:12px;margin-bottom:2px;'+(isT?'color:#1A7A6D':'color:#333');
+        num.textContent=d;cell.appendChild(num);
         events.forEach(function(ev){
-            if(dateStr >= ev.start && dateStr <= ev.end){
-                var tag = document.createElement('div');
-                tag.style.cssText = 'padding:1px 4px;margin-bottom:1px;border-radius:3px;font-size:9px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:'+ev.color;
-                tag.textContent = ev.title;
-                tag.title = ev.title;
+            if(ds>=ev.start&&ds<=ev.end){
+                var tag=document.createElement('div');
+                tag.style.cssText='padding:1px 3px;margin-bottom:1px;border-radius:3px;font-size:8px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:'+ev.color;
+                tag.textContent=(ev.time?ev.time+' ':'')+ev.title;tag.title=ev.title+(ev.description?' - '+ev.description:'');
                 cell.appendChild(tag);
             }
         });
-        
+        cell.onclick=(function(dateStr){return function(){
+            document.querySelector('[name=event_date]').value=dateStr;
+            document.getElementById('addEvtM').classList.add('active');
+        }})(ds);
         grid.appendChild(cell);
     }
 })();
 </script>
 
-{% elif page == 'paie_sign' %}
+{% elif page == 'paie_sign' %}{% elif page == 'paie_sign' %}
 <div class="page-header"><h1>✍️ Signature du bulletin de paie</h1></div>
 <div class="card"><div class="card-body">
     <div style="background:#f8faf9;padding:16px;border-radius:10px;margin-bottom:16px">

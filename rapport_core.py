@@ -2066,12 +2066,12 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
     """Génère un PDF de devis/proforma au format RAMYA."""
     
     doc = SimpleDocTemplate(output_path, pagesize=A4,
-        leftMargin=15*mm, rightMargin=15*mm, topMargin=12*mm, bottomMargin=20*mm)
+        leftMargin=15*mm, rightMargin=15*mm, topMargin=10*mm, bottomMargin=12*mm)
     
     story = []
     
     # Styles
-    s_title = ParagraphStyle('title', fontSize=28, fontName='Helvetica-Bold', 
+    s_title = ParagraphStyle('title', fontSize=20, fontName='Helvetica-Bold', 
                               alignment=TA_RIGHT, textColor=TEAL)
     s_ref = ParagraphStyle('ref', fontSize=10, alignment=TA_RIGHT, textColor=HexColor('#555'))
     s_normal = ParagraphStyle('normal', fontSize=10, leading=13)
@@ -2079,7 +2079,7 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
     s_small = ParagraphStyle('small', fontSize=8, textColor=HexColor('#888'))
     s_center = ParagraphStyle('center', fontSize=9, alignment=TA_CENTER)
     s_right = ParagraphStyle('right', fontSize=10, alignment=TA_RIGHT)
-    s_footer = ParagraphStyle('footer', fontSize=7, alignment=TA_CENTER, textColor=TEAL)
+    s_footer = ParagraphStyle('footer', fontSize=6, alignment=TA_CENTER, textColor=TEAL)
     
     doc_type = devis_data.get('doc_type', 'devis').upper()
     ref = devis_data.get('reference', '')
@@ -2097,7 +2097,7 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
     remise = devis_data.get('remise', 0)
     
     # === HEADER ===
-    s_svc = ParagraphStyle('services', fontSize=9, textColor=ORANGE, leading=13, alignment=TA_RIGHT)
+    s_svc = ParagraphStyle('services', fontSize=7, textColor=ORANGE, leading=13, alignment=TA_RIGHT)
     
     logo_el = Paragraph("<b>RAMYA<br/>TECHNOLOGIE &amp; INNOVATION</b>", 
                 ParagraphStyle('co', fontSize=12, fontName='Helvetica-Bold', textColor=TEAL))
@@ -2109,7 +2109,7 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
     header_data = [
         [logo_el,
          Paragraph("<b>RAMYA TECHNOLOGIE &amp; INNOVATION</b><br/><font size='7' color='#888'>Abidjan, Côte d'Ivoire · RCCM: CI-ABJ-03-2017_A10-25092</font>", 
-                    ParagraphStyle('co', fontSize=11, fontName='Helvetica-Bold', textColor=TEAL, leading=14)),
+                    ParagraphStyle('co', fontSize=9, fontName='Helvetica-Bold', textColor=TEAL, leading=14)),
          Paragraph("""<font color='#1a7a6d'>■</font> <i>Caméras de surveillance,</i><br/>
 <font color='#1a7a6d'>■</font> <i>Clôture électrique,</i><br/>
 <font color='#1a7a6d'>■</font> <i>Kit visiophone alarme anti-intrusion,</i><br/>

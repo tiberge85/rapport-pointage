@@ -153,6 +153,10 @@ from models import migrate_v36
 migrate_v36()
 from models import migrate_v37
 migrate_v37()
+from models import migrate_v38
+migrate_v38()
+from models import migrate_v39
+migrate_v39()
 from models import migrate_v31
 migrate_v31()
 from models import migrate_v32
@@ -167,6 +171,10 @@ from models import migrate_v36
 migrate_v36()
 from models import migrate_v37
 migrate_v37()
+from models import migrate_v38
+migrate_v38()
+from models import migrate_v39
+migrate_v39()
 from models import migrate_v27
 migrate_v27()
 from models import migrate_v28
@@ -189,6 +197,10 @@ from models import migrate_v36
 migrate_v36()
 from models import migrate_v37
 migrate_v37()
+from models import migrate_v38
+migrate_v38()
+from models import migrate_v39
+migrate_v39()
 from models import migrate_v31
 migrate_v31()
 from models import migrate_v32
@@ -203,6 +215,10 @@ from models import migrate_v36
 migrate_v36()
 from models import migrate_v37
 migrate_v37()
+from models import migrate_v38
+migrate_v38()
+from models import migrate_v39
+migrate_v39()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -980,6 +996,13 @@ def clients_add():
         request.form.get('address', ''), request.form.get('notes', ''),
         session['user_id']
     )
+    # Save client_status
+    try:
+        conn = _gdb()
+        cid_new = conn.execute("SELECT id FROM clients ORDER BY id DESC LIMIT 1").fetchone()[0]
+        conn.execute("UPDATE clients SET client_status=? WHERE id=?", (request.form.get('client_status','entreprise_sans_contrat'), cid_new))
+        conn.commit(); conn.close()
+    except: pass
     # Update enriched fields
     from models import get_db as _gdb2
     conn = _gdb2()
@@ -1015,7 +1038,7 @@ def clients_edit(cid):
         conn = _gdb3()
         for field in ['sector','city','country','website','rc_number','cnps_number',
                       'contact_title','contact_tel2','contact_email2','payment_terms',
-                      'source','status']:
+                      'source','status','client_status']:
             val = request.form.get(field, '')
             try: conn.execute(f"UPDATE clients SET {field}=? WHERE id=?", (val, cid))
             except: pass
@@ -2998,60 +3021,58 @@ def rh_dashboard():
 
 
 @app.route('/rh/calendrier')
-@permission_required('fichiers')
+@login_required
 def rh_calendrier():
     conn = _gdb()
-    events = []
     today = datetime.now()
     year = int(request.args.get('year', today.year))
     month = int(request.args.get('month', today.month))
+    # Handle month overflow
+    if month > 12: month = 1; year += 1
+    if month < 1: month = 12; year -= 1
     
-    # Congés approuvés
+    # Load calendar events
     try:
-        conges = [dict(r) for r in conn.execute(
-            "SELECT c.*, e.first_name||' '||e.last_name as name FROM leaves c LEFT JOIN employees e ON c.employee_id=e.id WHERE c.status='approuve'").fetchall()]
-        for c_ in conges:
-            events.append({'title': f"🏖️ {c_['name']}", 'start': c_['start_date'], 'end': c_['end_date'], 'color': '#e8672a', 'type': 'conge'})
-    except: pass
+        all_events = [dict(r) for r in conn.execute(
+            "SELECT * FROM calendar_events ORDER BY start_date ASC").fetchall()]
+    except: all_events = []
     
-    # Absences
-    try:
-        abs_ = [dict(r) for r in conn.execute(
-            "SELECT a.*, e.first_name||' '||e.last_name as name FROM absences a LEFT JOIN employees e ON a.employee_id=e.id WHERE a.date LIKE ?",
-            (f"{year}-{month:02d}%",)).fetchall()]
-        for a in abs_:
-            events.append({'title': f"❌ {a['name']}", 'start': a['date'], 'end': a['date'], 'color': '#c53030', 'type': 'absence'})
-    except: pass
-    
-    # Anniversaires
-    try:
-        emps = [dict(r) for r in conn.execute("SELECT * FROM employees WHERE status='actif' AND birth_date IS NOT NULL AND birth_date != ''").fetchall()]
-        for e in emps:
-            bd = e.get('birth_date','')
-            if bd and len(bd) >= 10:
-                bd_month = f"{year}-{bd[5:7]}-{bd[8:10]}"
-                events.append({'title': f"🎂 {e['first_name']} {e['last_name']}", 'start': bd_month, 'end': bd_month, 'color': '#7b1fa2', 'type': 'anniversaire'})
-    except: pass
-    
-    # Contrats expirant
-    try:
-        contracts = [dict(r) for r in conn.execute(
-            "SELECT c.*, e.first_name||' '||e.last_name as name FROM rh_contracts c LEFT JOIN employees e ON c.employee_id=e.id WHERE c.end_date LIKE ? AND c.status='actif'",
-            (f"{year}-{month:02d}%",)).fetchall()]
-        for ct in contracts:
-            events.append({'title': f"📄 Contrat {ct['name']}", 'start': ct['end_date'], 'end': ct['end_date'], 'color': '#ff9800', 'type': 'contrat'})
-    except: pass
-    
-    # Formations
-    try:
-        trains = [dict(r) for r in conn.execute("SELECT * FROM rh_trainings WHERE date LIKE ?", (f"{year}-{month:02d}%",)).fetchall()]
-        for t in trains:
-            events.append({'title': f"📚 {t.get('title','Formation')}", 'start': t['date'], 'end': t['date'], 'color': '#1565c0', 'type': 'formation'})
-    except: pass
+    # Filter for display
+    events_json = []
+    for ev in all_events:
+        events_json.append({
+            'id': ev['id'], 'title': ev.get('title',''),
+            'start': ev.get('start_date','') or ev.get('event_date',''), 'end': ev.get('end_date','') or ev.get('start_date','') or ev.get('event_date',''),
+            'color': ev.get('color','#1A7A6D'), 'type': ev.get('category','general'),
+            'time': ev.get('event_time',''), 'description': ev.get('description','')
+        })
     
     conn.close()
     import json
-    return render_template('extra_pages.html', page='rh_calendrier', events=json.dumps(events), year=year, month=month)
+    return render_template('extra_pages.html', page='rh_calendrier', 
+        events=json.dumps(events_json), all_events=all_events, year=year, month=month)
+
+@app.route('/rh/calendrier/add', methods=['POST'])
+@login_required
+def rh_calendrier_add():
+    conn = _gdb()
+    colors = {'reunion':'#1565c0','rappel':'#e8672a','deadline':'#c53030','visite':'#2e7d32','formation':'#7b1fa2','personnel':'#ff9800','autre':'#1A7A6D'}
+    cat = request.form.get('category','autre')
+    conn.execute("""INSERT INTO calendar_events (title, start_date, end_date, event_time, description, category, color, created_by) 
+        VALUES (?,?,?,?,?,?,?,?)""",
+        (request.form.get('title',''), request.form.get('event_date',''), 
+         request.form.get('end_date','') or request.form.get('event_date',''),
+         request.form.get('event_time',''), request.form.get('description',''),
+         cat, colors.get(cat,'#1A7A6D'), session['user_id']))
+    conn.commit(); conn.close()
+    flash("Événement ajouté", "success")
+    return redirect(f"/rh/calendrier?year={request.form.get('year','')}&month={request.form.get('month','')}")
+
+@app.route('/rh/calendrier/delete/<int:eid>')
+@login_required
+def rh_calendrier_delete(eid):
+    conn = _gdb(); conn.execute("DELETE FROM calendar_events WHERE id=?", (eid,)); conn.commit(); conn.close()
+    flash("Événement supprimé", "success"); return redirect('/rh/calendrier')
 
 @app.route('/rh/personnel')
 @permission_required('fichiers')
