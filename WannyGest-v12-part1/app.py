@@ -244,6 +244,10 @@ try:
     from models import get_role_permissions as _grp
     if not _grp('concierge'):
         update_role_permissions('concierge', ['dashboard', 'concierge', 'rapports_j', 'chat'])
+    if not _grp('proprietaire'):
+        update_role_permissions('proprietaire', ['dashboard', 'dashboard_general', 'concierge', 'fichiers', 'clients', 'comptabilite', 'proforma', 'moyens_generaux', 'rapports_j', 'chat', 'tracking', 'logs'])
+    if not _grp('secretaire'):
+        update_role_permissions('secretaire', ['dashboard', 'clients', 'proforma', 'rapports_j', 'chat', 'concierge'])
 except: pass
 
 from models import (init_devis_tables, create_devis, get_all_devis, get_devis_by_id,
@@ -1067,7 +1071,7 @@ def clients_delete(cid):
 def admin_page():
     users = get_all_users()
     stats = get_dashboard_stats()
-    role_perms = {r: get_role_permissions(r) for r in ['admin', 'dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique', 'resp_projet', 'concierge']}
+    role_perms = {r: get_role_permissions(r) for r in ['admin', 'dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique', 'resp_projet', 'concierge', 'proprietaire', 'secretaire']}
     conn = _gdb()
     try:
         tenders = [dict(r) for r in conn.execute("SELECT * FROM tender_links ORDER BY active DESC, deadline ASC").fetchall()]
@@ -1181,7 +1185,7 @@ def admin_delete_user(uid):
 @app.route('/admin/permissions', methods=['POST'])
 @permission_required('admin')
 def admin_permissions():
-    for role in ['dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique', 'resp_projet', 'concierge']:
+    for role in ['dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique', 'resp_projet', 'concierge', 'proprietaire', 'secretaire']:
         perms = [p for p in ALL_PERMISSIONS if request.form.get(f'{role}_{p}')]
         update_role_permissions(role, perms)
     # Admin always has all

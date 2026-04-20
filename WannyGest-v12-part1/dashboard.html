@@ -17,12 +17,12 @@
 <!-- 3 columns: Factures / Devis / Visites -->
 <div class="g3" style="margin-bottom:16px">
     <div class="card"><div class="card-header"><h3>Aperçu des factures</h3></div><div class="card-body" style="font-size:12px">
-        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0f0f0"><span>{{ inv_stats.a_envoyer }} Non envoyé</span><div style="background:#42a5f5;height:8px;width:{{ [inv_stats.a_envoyer * 5, 100] | min }}px;border-radius:4px"></div></div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0f0f0"><span>{{ inv_stats.a_envoyer }} Non envoyé</span><div style="background:#1A7A6D;height:8px;width:{{ [inv_stats.a_envoyer * 5, 100] | min }}px;border-radius:4px"></div></div>
         <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0f0f0;color:#c53030"><span>{{ inv_stats.en_attente_paiement }} Impayée</span><div style="background:#ef5350;height:8px;width:{{ [inv_stats.en_attente_paiement * 5, 100] | min }}px;border-radius:4px"></div></div>
         <div style="display:flex;justify-content:space-between;padding:5px 0;color:#2e7d32"><span>{{ inv_stats.payee }} Payée</span><div style="background:#66bb6a;height:8px;width:{{ [inv_stats.payee * 5, 100] | min }}px;border-radius:4px"></div></div>
     </div></div>
     <div class="card"><div class="card-header"><h3>Aperçu des devis</h3></div><div class="card-body" style="font-size:12px">
-        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0f0f0"><span>{{ d_stats.brouillon if d_stats else 0 }} Brouillon</span><div style="background:#42a5f5;height:8px;width:{{ [(d_stats.brouillon if d_stats else 0) * 5, 100] | min }}px;border-radius:4px"></div></div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0f0f0"><span>{{ d_stats.brouillon if d_stats else 0 }} Brouillon</span><div style="background:#1A7A6D;height:8px;width:{{ [(d_stats.brouillon if d_stats else 0) * 5, 100] | min }}px;border-radius:4px"></div></div>
         <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f0f0f0"><span>{{ d_stats.envoye if d_stats else 0 }} Envoyé</span><div style="background:#ff9800;height:8px;width:{{ [(d_stats.envoye if d_stats else 0) * 5, 100] | min }}px;border-radius:4px"></div></div>
         <div style="display:flex;justify-content:space-between;padding:5px 0;color:#2e7d32"><span>{{ d_stats.accepte if d_stats else 0 }} Accepté</span><div style="background:#66bb6a;height:8px;width:{{ [(d_stats.accepte if d_stats else 0) * 5, 100] | min }}px;border-radius:4px"></div></div>
     </div></div>
@@ -69,8 +69,8 @@
 </div></div>{% endif %}
 
 <script>
-new Chart(document.getElementById('c1'),{type:'doughnut',data:{labels:['À envoyer','Envoyées','Attente','Payées'],datasets:[{data:[{{inv_stats.a_envoyer}},{{inv_stats.envoyee}},{{inv_stats.en_attente_paiement}},{{inv_stats.payee}}],backgroundColor:['#e8672a','#42a5f5','#ff9800','#2e7d32']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});
-new Chart(document.getElementById('c2'),{type:'bar',data:{labels:['Brouillons','Envoyés','Acceptés','Refusés'],datasets:[{data:[{{d_stats.brouillon if d_stats else 0}},{{d_stats.envoye if d_stats else 0}},{{d_stats.accepte if d_stats else 0}},{{d_stats.refuse if d_stats else 0}}],backgroundColor:['#42a5f5','#ff9800','#2e7d32','#ef5350'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
+new Chart(document.getElementById('c1'),{type:'doughnut',data:{labels:['À envoyer','Envoyées','Attente','Payées'],datasets:[{data:[{{inv_stats.a_envoyer}},{{inv_stats.envoyee}},{{inv_stats.en_attente_paiement}},{{inv_stats.payee}}],backgroundColor:['#e8672a','#1A7A6D','#ff9800','#0D6B5E']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}}});
+new Chart(document.getElementById('c2'),{type:'bar',data:{labels:['Brouillons','Envoyés','Acceptés','Refusés'],datasets:[{data:[{{d_stats.brouillon if d_stats else 0}},{{d_stats.envoye if d_stats else 0}},{{d_stats.accepte if d_stats else 0}},{{d_stats.refuse if d_stats else 0}}],backgroundColor:['#1A7A6D','#e8672a','#2e7d32','#c53030'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
 </script>
 {% endif %}
 
@@ -88,7 +88,7 @@ new Chart(document.getElementById('c2'),{type:'bar',data:{labels:['Brouillons','
     <a href="/devis/new" class="stat-card" style="text-decoration:none;border-left:4px solid #1a3a5c"><div class="stat-icon blue">📝</div><div class="stat-info"><div style="font-size:14px;font-weight:700;color:#1a3a5c">Nouveau devis</div></div></a>
     <a href="/prospects" class="stat-card" style="text-decoration:none;border-left:4px solid #2e7d32"><div class="stat-icon green">🎯</div><div class="stat-info"><div style="font-size:14px;font-weight:700;color:#1a3a5c">Prospects</div></div></a>
 </div>
-<script>new Chart(document.getElementById('cc'),{type:'bar',data:{labels:['Brouillons','Envoyés','Acceptés','Visites'],datasets:[{data:[{{d_stats.brouillon if d_stats else 0}},{{d_stats.envoye if d_stats else 0}},{{d_stats.accepte if d_stats else 0}},{{v_stats.total if v_stats else 0}}],backgroundColor:['#42a5f5','#ff9800','#2e7d32','#e8672a'],borderRadius:8}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}}}});</script>
+<script>new Chart(document.getElementById('cc'),{type:'bar',data:{labels:['Brouillons','Envoyés','Acceptés','Visites'],datasets:[{data:[{{d_stats.brouillon if d_stats else 0}},{{d_stats.envoye if d_stats else 0}},{{d_stats.accepte if d_stats else 0}},{{v_stats.total if v_stats else 0}}],backgroundColor:['#1A7A6D','#e8672a','#0D6B5E','#ff9800'],borderRadius:8}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}}}});</script>
 {% endif %}
 
 {# ======================== COMPTABLE ======================== #}
@@ -105,7 +105,7 @@ new Chart(document.getElementById('c2'),{type:'bar',data:{labels:['Brouillons','
     <a href="/tresorerie" class="stat-card" style="text-decoration:none;border-left:4px solid #e8672a"><div class="stat-icon orange">🏦</div><div class="stat-info"><div style="font-size:14px;font-weight:700;color:#1a3a5c">Trésorerie</div></div></a>
     <a href="/depenses" class="stat-card" style="text-decoration:none;border-left:4px solid #c53030"><div class="stat-icon red">💸</div><div class="stat-info"><div style="font-size:14px;font-weight:700;color:#1a3a5c">Dépenses</div></div></a>
 </div>
-<script>new Chart(document.getElementById('cco'),{type:'doughnut',data:{labels:['À envoyer','Envoyées','Attente','Payées'],datasets:[{data:[{{inv_stats.a_envoyer}},{{inv_stats.envoyee}},{{inv_stats.en_attente_paiement}},{{inv_stats.payee}}],backgroundColor:['#e8672a','#42a5f5','#ff9800','#2e7d32']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10}}}}}});</script>
+<script>new Chart(document.getElementById('cco'),{type:'doughnut',data:{labels:['À envoyer','Envoyées','Attente','Payées'],datasets:[{data:[{{inv_stats.a_envoyer}},{{inv_stats.envoyee}},{{inv_stats.en_attente_paiement}},{{inv_stats.payee}}],backgroundColor:['#e8672a','#1A7A6D','#ff9800','#0D6B5E']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10}}}}}});</script>
 {% endif %}
 
 {# ======================== RH ======================== #}
@@ -123,7 +123,7 @@ new Chart(document.getElementById('c2'),{type:'bar',data:{labels:['Brouillons','
     <a href="/rh/paie" class="stat-card" style="text-decoration:none;border-left:4px solid #2e7d32"><div class="stat-icon green">💵</div><div class="stat-info"><div style="font-size:13px;font-weight:700;color:#1a3a5c">Paie</div></div></a>
     <a href="/rh/formations" class="stat-card" style="text-decoration:none;border-left:4px solid #7b1fa2"><div class="stat-icon purple">🎓</div><div class="stat-info"><div style="font-size:13px;font-weight:700;color:#1a3a5c">Formations</div></div></a>
 </div>
-<script>new Chart(document.getElementById('crh'),{type:'bar',data:{labels:['CDI','CDD','Congés','Fichiers'],datasets:[{data:[{{emp_stats.cdi if emp_stats else 0}},{{emp_stats.cdd if emp_stats else 0}},{{emp_stats.pending_leaves if emp_stats else 0}},{{stats.pending_jobs}}],backgroundColor:['#1a3a5c','#42a5f5','#ff9800','#2e7d32'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});</script>
+<script>new Chart(document.getElementById('crh'),{type:'bar',data:{labels:['CDI','CDD','Congés','Fichiers'],datasets:[{data:[{{emp_stats.cdi if emp_stats else 0}},{{emp_stats.cdd if emp_stats else 0}},{{emp_stats.pending_leaves if emp_stats else 0}},{{stats.pending_jobs}}],backgroundColor:['#1a3a5c','#1A7A6D','#ff9800','#2e7d32'],borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});</script>
 {% endif %}
 
 {# ======================== OTHER ROLES ======================== #}

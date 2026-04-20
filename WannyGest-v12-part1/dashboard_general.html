@@ -108,7 +108,7 @@
 new Chart(document.getElementById('prospectChart'),{type:'doughnut',data:{
     labels:['Nouveau','Contacté','Qualifié','Proposition','Gagné','Perdu'],
     datasets:[{data:[{{ ps.get('nouveau',0) }},{{ ps.get('contacte',0) }},{{ ps.get('qualifie',0) }},{{ ps.get('proposition',0) }},{{ ps.get('gagne',0) }},{{ ps.get('perdu',0) }}],
-    backgroundColor:['#1565c0','#e8672a','#7b1fa2','#B8860B','#2e7d32','#c53030']}]
+    backgroundColor:['#1A7A6D','#e8672a','#0D6B5E','#B8860B','#2e7d32','#c53030']}]
 },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:9}}}}}});
 </script>
 {% endblock %}

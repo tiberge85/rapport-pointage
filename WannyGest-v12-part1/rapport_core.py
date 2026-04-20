@@ -1373,9 +1373,14 @@ def merge_files(enr_path, trans_path):
             enr_day = enr_emp.get('dates', {}).get(date_str, {}) if enr_emp else {}
             times = trans_dates.get(date_str, [])
             
-            # --- Planning ---
-            sched_start = enr_day.get('sched_start') or typical_start
-            sched_end = enr_day.get('sched_end') or typical_end
+            # --- Planning : toujours garder les heures exactes du fichier Excel ---
+            sched_start = enr_day.get('sched_start') if enr_day else None
+            sched_end = enr_day.get('sched_end') if enr_day else None
+            # Fallback au typical SEULEMENT si aucune donnée Excel
+            if not sched_start:
+                sched_start = typical_start
+            if not sched_end:
+                sched_end = typical_end
             
             ss_m = time_to_minutes(sched_start)
             se_m = time_to_minutes(sched_end)
