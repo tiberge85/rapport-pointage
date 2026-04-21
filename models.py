@@ -2734,3 +2734,61 @@ def migrate_v41():
     try: conn.execute("ALTER TABLE tasks ADD COLUMN client_id INTEGER DEFAULT 0")
     except: pass
     conn.commit(); conn.close()
+
+def migrate_v42():
+    """Multi-caisses + portail client tables."""
+    conn = get_db()
+    conn.executescript('''
+        CREATE TABLE IF NOT EXISTS caisses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL, description TEXT DEFAULT '',
+            responsible_id INTEGER, responsible_name TEXT,
+            solde_initial REAL DEFAULT 0, solde_actuel REAL DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS caisse_operations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            caisse_id INTEGER NOT NULL, type TEXT NOT NULL,
+            amount REAL NOT NULL, description TEXT,
+            reference TEXT, category TEXT DEFAULT 'divers',
+            intervention_id INTEGER, project_id INTEGER,
+            source_caisse_id INTEGER, dest_caisse_id INTEGER,
+            bank_account_id INTEGER,
+            created_by INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (caisse_id) REFERENCES caisses(id)
+        );
+        CREATE TABLE IF NOT EXISTS client_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id INTEGER NOT NULL,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL, salt TEXT,
+            full_name TEXT, email TEXT, tel TEXT,
+            is_active INTEGER DEFAULT 1,
+            last_login TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (client_id) REFERENCES clients(id)
+        );
+        CREATE TABLE IF NOT EXISTS client_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_id INTEGER NOT NULL, client_user_id INTEGER,
+            title TEXT NOT NULL, type TEXT DEFAULT 'intervention',
+            priority TEXT DEFAULT 'normale',
+            description TEXT, site_address TEXT,
+            status TEXT DEFAULT 'soumise',
+            intervention_id INTEGER, assigned_to INTEGER,
+            response TEXT, response_date TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (client_id) REFERENCES clients(id)
+        );
+        CREATE TABLE IF NOT EXISTS client_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id INTEGER, client_user_id INTEGER,
+            user_id INTEGER, sender_type TEXT DEFAULT 'client',
+            message TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    # Add caisse_id to existing tables
+    for tbl in ['caisse_sorties','caisse_entrees','pieces_caisse','interventions']:
+        try: conn.execute(f"ALTER TABLE {tbl} ADD COLUMN caisse_id INTEGER DEFAULT 0")
+        except: pass
+    conn.commit(); conn.close()

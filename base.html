@@ -306,6 +306,7 @@
                     <a href="/comptabilite/creances" class="{% if page == 'creances' %}active{% endif %}">📥 Créances clients</a>
                     <a href="/comptabilite/dettes" class="{% if page == 'dettes' %}active{% endif %}">📤 Dettes fournisseurs</a>
                     <a href="/comptabilite/validation-paie" class="{% if page == 'compta_paie' %}active{% endif %}">💵 Validation paie</a>
+                    <a href="/comptabilite/caisses" class="{% if page == 'caisses' or page == 'caisse_detail' %}active{% endif %}">💰 Multi-caisses</a>
                     <a href="/comptabilite/ecritures" class="{% if page == 'ecritures' %}active{% endif %}">📝 Journal comptable</a>
                     <a href="/comptabilite/rapport-caisse" class="{% if page == 'rapport_caisse' %}active{% endif %}">📋 Rapport caisse</a>
                     <a href="/comptabilite/bilan" class="{% if page == 'bilan' %}active{% endif %}">📊 Bilan SYSCOHADA</a>
@@ -369,6 +370,8 @@
                 <div class="nav-section-title" onclick="toggleSection('sec-admin')">⚙️ ADMINISTRATION <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
                     <a href="/admin" class="{% if page == 'admin' %}active{% endif %}">Utilisateurs & rôles</a>
+                    <a href="/admin/client-requests" class="{% if page == 'client_requests' %}active{% endif %}">📩 Demandes clients</a>
+                    <a href="/admin/client-users" class="{% if page == 'client_users' %}active{% endif %}">👤 Portail clients</a>
                     <a href="/historique" class="{% if page == 'historique' %}active{% endif %}">🕓 Historique</a>
                     <a href="/executif" class="{% if page == 'executif' %}active{% endif %}">📊 Tableau exécutif</a>
                     <a href="/logs" class="{% if page == 'logs' %}active{% endif %}">Logs d'activité</a>

@@ -614,6 +614,251 @@ new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes'
 
 
 
+
+{% elif page == 'caisses' %}
+<div class="page-header"><h1>💰 Multi-caisses</h1>
+<button class="btn btn-primary btn-sm" onclick="document.getElementById('addCaisseM').classList.add('active')">+ Nouvelle caisse</button></div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:16px">
+{% for ca in caisses %}
+<a href="/comptabilite/caisses/{{ ca.id }}" class="card" style="text-decoration:none;border-left:4px solid {% if ca.solde_calcule >= 0 %}#1A7A6D{% else %}#c53030{% endif %}">
+<div class="card-body" style="padding:14px">
+    <div style="font-size:14px;font-weight:700;color:#1a3a5c;margin-bottom:4px">{{ ca.name }}</div>
+    <div style="font-size:22px;font-weight:800;color:{% if ca.solde_calcule >= 0 %}#1A7A6D{% else %}#c53030{% endif %}">{{ '{:,.0f}'.format(ca.solde_calcule) }} F</div>
+    <div style="font-size:10px;color:#888;margin-top:4px">👤 {{ ca.responsible_name or '-' }} · {{ ca.nb_ops }} opérations</div>
+</div></a>
+{% endfor %}
+</div>
+<div class="card"><div class="card-body" style="text-align:right;font-size:16px;font-weight:700">
+Total toutes caisses : <span style="color:#1A7A6D">{{ '{:,.0f}'.format(total) }} FCFA</span>
+</div></div>
+
+<div class="modal-bg" id="addCaisseM"><div class="modal" style="max-width:450px"><h3>💰 Nouvelle caisse</h3>
+<form method="post" action="/comptabilite/caisses/add">
+<div class="form-group"><label>Nom *</label><input type="text" name="name" required placeholder="Caisse principale, Petite caisse..."></div>
+<div class="form-group"><label>Description</label><input type="text" name="description" placeholder="Usage..."></div>
+<div class="form-row">
+    <div class="form-group"><label>Responsable</label><select name="responsible_id"><option value="">—</option>{% for u in users %}<option value="{{ u.id }}">{{ u.full_name }}</option>{% endfor %}</select></div>
+    <div class="form-group"><label>Solde initial (F)</label><input type="number" name="solde_initial" step="1" value="0"></div>
+</div>
+<div style="display:flex;gap:8px;justify-content:flex-end">
+    <button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
+    <button type="submit" class="btn btn-primary">💰 Créer</button>
+</div></form></div></div>
+
+{% elif page == 'caisse_detail' %}
+<div class="page-header"><h1>💰 {{ caisse.name }}</h1>
+<div style="display:flex;gap:6px"><a href="/comptabilite/caisses" class="btn btn-outline btn-sm">← Retour</a>
+<button class="btn btn-sm" style="background:#2e7d32;color:#fff" onclick="document.getElementById('opEntree').classList.add('active')">+ Entrée</button>
+<button class="btn btn-sm" style="background:#c53030;color:#fff" onclick="document.getElementById('opSortie').classList.add('active')">- Sortie</button>
+<button class="btn btn-sm" style="background:#1A7A6D;color:#fff" onclick="document.getElementById('opTransfert').classList.add('active')">↔ Transfert</button>
+</div></div>
+
+<div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:14px">
+    <div class="stat-card" style="border-left:4px solid #1A7A6D"><div class="stat-info"><div class="stat-num" style="color:#1A7A6D;font-size:22px">{{ '{:,.0f}'.format(caisse.solde_calcule) }}</div><div class="stat-label">Solde actuel (F)</div></div></div>
+    <div class="stat-card"><div class="stat-info"><div class="stat-num">{{ '{:,.0f}'.format(caisse.solde_initial) }}</div><div class="stat-label">Solde initial</div></div></div>
+    <div class="stat-card"><div class="stat-info"><div class="stat-num">👤 {{ caisse.responsible_name or '-' }}</div><div class="stat-label">Responsable</div></div></div>
+</div>
+
+<div class="card"><div class="card-header"><h3>📋 Opérations</h3>
+<form method="get" style="display:flex;gap:6px"><input type="month" name="period" value="{{ period }}" style="padding:4px;border:1px solid #ddd;border-radius:6px">
+<button type="submit" class="btn btn-outline btn-sm">Filtrer</button></form></div>
+<div class="card-body" style="padding:0">
+{% if operations %}
+<div class="table-wrap"><table>
+<thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Réf</th><th style="text-align:right">Montant</th></tr></thead>
+<tbody>{% for op in operations %}<tr>
+<td style="font-size:11px">{{ op.created_at[:16] if op.created_at else '-' }}</td>
+<td><span style="padding:2px 6px;border-radius:8px;font-size:9px;{% if op.type=='entree' %}background:#e8f5e9;color:#2e7d32{% elif op.type=='sortie' %}background:#fde8e8;color:#c53030{% else %}background:#e3f2fd;color:#1A7A6D{% endif %}">{{ op.type }}</span></td>
+<td>{{ op.description or '-' }}</td>
+<td style="font-size:10px;color:#888">{{ op.reference or '-' }}</td>
+<td style="text-align:right;font-weight:700;color:{% if op.type=='entree' %}#2e7d32{% else %}#c53030{% endif %}">{% if op.type=='entree' %}+{% else %}-{% endif %}{{ '{:,.0f}'.format(op.amount) }} F</td>
+</tr>{% endfor %}</tbody></table></div>
+{% else %}<p style="text-align:center;color:#999;padding:20px">Aucune opération pour {{ period }}</p>{% endif %}
+</div></div>
+
+{% for op_type, op_label, op_color in [('entree','Entrée','#2e7d32'),('sortie','Sortie','#c53030')] %}
+<div class="modal-bg" id="op{{ op_label }}"><div class="modal" style="max-width:420px"><h3>{{ '+' if op_type=='entree' else '-' }} {{ op_label }}</h3>
+<form method="post" action="/comptabilite/caisses/{{ caisse.id }}/operation">
+<input type="hidden" name="type" value="{{ op_type }}">
+<div class="form-group"><label>Montant (F) *</label><input type="number" name="amount" required min="1" step="1"></div>
+<div class="form-group"><label>Description</label><input type="text" name="description" placeholder="Motif..."></div>
+<div class="form-group"><label>Catégorie</label><select name="category"><option value="divers">Divers</option><option value="fournitures">Fournitures</option><option value="transport">Transport</option><option value="intervention">Intervention</option><option value="projet">Projet</option></select></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
+<button type="submit" class="btn" style="background:{{ op_color }};color:#fff">{{ op_label }}</button></div>
+</form></div></div>
+{% endfor %}
+
+<div class="modal-bg" id="opTransfert"><div class="modal" style="max-width:420px"><h3>↔ Transfert</h3>
+<form method="post" action="/comptabilite/caisses/{{ caisse.id }}/operation">
+<div class="form-group"><label>Type</label><select name="type" onchange="document.getElementById('destCaisse').style.display=this.value=='transfert_caisse'?'':'none';document.getElementById('destBank').style.display=this.value=='transfert_banque'?'':'none'">
+<option value="transfert_caisse">Vers une autre caisse</option><option value="transfert_banque">Versement banque</option></select></div>
+<div class="form-group"><label>Montant (F) *</label><input type="number" name="amount" required min="1" step="1"></div>
+<div class="form-group" id="destCaisse"><label>Caisse destination</label><select name="dest_caisse_id">{% for oc in other_caisses %}<option value="{{ oc.id }}">{{ oc.name }}</option>{% endfor %}</select></div>
+<div class="form-group" id="destBank" style="display:none"><label>Compte bancaire</label><select name="bank_account_id">{% for b in banks %}<option value="{{ b.id }}">{{ b.name }}</option>{% endfor %}</select></div>
+<div class="form-group"><label>Description</label><input type="text" name="description"></div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
+<button type="submit" class="btn btn-primary">↔ Transférer</button></div>
+</form></div></div>
+
+{% elif page == 'portail_login' %}
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#1a3a5c,#1A7A6D)">
+<div class="card" style="max-width:380px;width:100%;margin:20px">
+<div class="card-body" style="padding:30px;text-align:center">
+    <img src="/static/logo_ramya.png" style="height:60px;margin-bottom:14px" onerror="this.style.display='none'">
+    <h2 style="color:#1a3a5c;margin-bottom:4px">Portail Client</h2>
+    <p style="color:#888;font-size:12px;margin-bottom:20px">RAMYA Technologie & Innovation</p>
+    <form method="post" action="/portail/login">
+        <div class="form-group"><input type="text" name="username" required placeholder="Identifiant" style="text-align:center"></div>
+        <div class="form-group"><input type="password" name="password" required placeholder="Mot de passe" style="text-align:center"></div>
+        <button type="submit" class="btn btn-primary" style="width:100%;padding:12px">🔐 Connexion</button>
+    </form>
+    <a href="/login" style="font-size:11px;color:#888;margin-top:14px;display:block">← Accès employé</a>
+</div></div></div>
+
+{% elif page == 'portail_dashboard' %}
+<div style="background:#1A7A6D;color:#fff;padding:16px 20px;margin:-20px -20px 20px;border-radius:0 0 16px 16px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><h2 style="margin:0;font-size:18px">👋 {{ session.client_name }}</h2><p style="margin:2px 0 0;font-size:12px;opacity:0.8">Portail Client RAMYA</p></div>
+        <a href="/portail/logout" class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff">Déconnexion</a>
+    </div>
+</div>
+<div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-bottom:14px">
+    <div class="stat-card" style="border-left:4px solid #e8672a"><div class="stat-info"><div class="stat-num" style="color:#e8672a">{{ data.pending }}</div><div class="stat-label">Demandes en cours</div></div></div>
+    <div class="stat-card" style="border-left:4px solid #1A7A6D"><div class="stat-info"><div class="stat-num" style="color:#1A7A6D">{{ data.total_interventions }}</div><div class="stat-label">Interventions</div></div></div>
+    <div class="stat-card" style="border-left:4px solid #2e7d32"><div class="stat-info"><div class="stat-num" style="color:#2e7d32">{{ data.invoices|length }}</div><div class="stat-label">Factures</div></div></div>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <a href="/portail/demande" class="btn btn-primary">📩 Nouvelle demande</a>
+    <a href="/portail/interventions" class="btn btn-outline">🔧 Interventions</a>
+    <a href="/portail/factures" class="btn btn-outline">🧾 Factures</a>
+</div>
+{% if data.requests %}
+<div class="card"><div class="card-header"><h3>📋 Mes demandes</h3></div><div class="card-body" style="padding:0">
+<div class="table-wrap"><table><thead><tr><th>Titre</th><th>Type</th><th>Statut</th><th>Date</th><th>Actions</th></tr></thead>
+<tbody>{% for r in data.requests %}<tr>
+<td><strong>{{ r.title }}</strong></td><td>{{ r.type }}</td>
+<td><span style="padding:2px 6px;border-radius:8px;font-size:9px;{% if r.status=='soumise' %}background:#fff3e0;color:#e8672a{% elif r.status=='convertie' %}background:#e3f2fd;color:#1A7A6D{% elif r.status=='terminee' %}background:#e8f5e9;color:#2e7d32{% else %}background:#f0f0f0;color:#555{% endif %}">{{ r.status }}</span></td>
+<td style="font-size:11px">{{ r.created_at[:10] if r.created_at else '-' }}</td>
+<td><a href="/portail/messages/{{ r.id }}" class="btn btn-outline btn-sm" style="font-size:9px">💬</a></td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% endif %}
+
+{% elif page == 'portail_demande' %}
+<div style="background:#1A7A6D;color:#fff;padding:12px 20px;margin:-20px -20px 20px;border-radius:0 0 12px 12px">
+    <a href="/portail/dashboard" style="color:rgba(255,255,255,0.7);text-decoration:none;font-size:12px">← Retour</a>
+    <h2 style="margin:4px 0 0;font-size:16px">📩 Nouvelle demande</h2>
+</div>
+<div class="card" style="max-width:500px"><div class="card-body">
+<form method="post">
+<div class="form-group"><label>Titre *</label><input type="text" name="title" required placeholder="Dépannage caméra, Installation alarme..."></div>
+<div class="form-row">
+    <div class="form-group"><label>Type</label><select name="type"><option value="intervention">Intervention</option><option value="maintenance">Maintenance</option><option value="depannage">Dépannage</option><option value="installation">Installation</option><option value="visite">Visite technique</option></select></div>
+    <div class="form-group"><label>Priorité</label><select name="priority"><option value="normale">Normale</option><option value="haute">Haute</option><option value="urgente">Urgente</option></select></div>
+</div>
+<div class="form-group"><label>Adresse du site</label><input type="text" name="site_address" placeholder="Lieu d'intervention"></div>
+<div class="form-group"><label>Description</label><textarea name="description" rows="4" style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:8px" placeholder="Décrivez votre besoin..."></textarea></div>
+<button type="submit" class="btn btn-primary" style="width:100%">📩 Soumettre la demande</button>
+</form></div></div>
+
+{% elif page == 'portail_interventions' %}
+<div style="background:#1A7A6D;color:#fff;padding:12px 20px;margin:-20px -20px 20px;border-radius:0 0 12px 12px">
+    <a href="/portail/dashboard" style="color:rgba(255,255,255,0.7);text-decoration:none;font-size:12px">← Retour</a>
+    <h2 style="margin:4px 0 0;font-size:16px">🔧 Mes interventions</h2>
+</div>
+{% for i in interventions %}
+<div class="card" style="margin-bottom:10px;border-left:3px solid {% if i.status=='terminee' %}#2e7d32{% elif i.status=='en_cours' %}#1A7A6D{% else %}#e8672a{% endif %}">
+<div class="card-body" style="padding:12px">
+    <div style="display:flex;justify-content:space-between"><strong>{{ i.title }}</strong>
+    <span style="padding:2px 8px;border-radius:8px;font-size:10px;{% if i.status=='terminee' %}background:#e8f5e9;color:#2e7d32{% elif i.status=='en_cours' %}background:#e3f2fd;color:#1A7A6D{% else %}background:#fff3e0;color:#e8672a{% endif %}">{{ i.status }}</span></div>
+    <div style="font-size:11px;color:#888;margin-top:4px">📅 {{ i.scheduled_date or '-' }} · 🔧 {{ i.technician_name or '-' }} · {{ i.type }}</div>
+    {% if i.rapport %}<div style="font-size:12px;margin-top:6px;padding:8px;background:#f8faf9;border-radius:6px">📝 {{ i.rapport[:100] }}</div>{% endif %}
+</div></div>
+{% endfor %}
+{% if not interventions %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:30px">Aucune intervention</div></div>{% endif %}
+
+{% elif page == 'portail_factures' %}
+<div style="background:#1A7A6D;color:#fff;padding:12px 20px;margin:-20px -20px 20px;border-radius:0 0 12px 12px">
+    <a href="/portail/dashboard" style="color:rgba(255,255,255,0.7);text-decoration:none;font-size:12px">← Retour</a>
+    <h2 style="margin:4px 0 0;font-size:16px">🧾 Mes factures</h2>
+</div>
+{% if factures %}
+<div class="card"><div class="card-body" style="padding:0">
+<div class="table-wrap"><table><thead><tr><th>Réf</th><th>Date</th><th style="text-align:right">Montant</th><th>Statut</th></tr></thead>
+<tbody>{% for f in factures %}<tr>
+<td><strong>{{ f.reference }}</strong></td><td>{{ f.created_at[:10] if f.created_at else '-' }}</td>
+<td style="text-align:right;font-weight:700">{{ '{:,.0f}'.format(f.amount or 0) }} F</td>
+<td><span style="padding:2px 6px;border-radius:8px;font-size:9px;{% if f.status=='payee' %}background:#e8f5e9;color:#2e7d32{% else %}background:#fff3e0;color:#e8672a{% endif %}">{{ f.status }}</span></td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:30px">Aucune facture</div></div>{% endif %}
+
+{% elif page == 'portail_messages' %}
+<div style="background:#1A7A6D;color:#fff;padding:12px 20px;margin:-20px -20px 20px;border-radius:0 0 12px 12px">
+    <a href="/portail/dashboard" style="color:rgba(255,255,255,0.7);text-decoration:none;font-size:12px">← Retour</a>
+    <h2 style="margin:4px 0 0;font-size:16px">💬 {{ req.title }}</h2>
+</div>
+<div class="card"><div class="card-body" style="max-height:400px;overflow-y:auto;padding:10px">
+{% for m in messages %}
+<div style="padding:8px 12px;margin-bottom:6px;border-radius:12px;max-width:80%;{% if m.sender_type=='client' %}margin-left:auto;background:#e3f2fd;color:#1a3a5c{% else %}background:#f0f0f0{% endif %}">
+    <div style="font-size:12px">{{ m.message }}</div>
+    <div style="font-size:9px;color:#888;text-align:right;margin-top:2px">{{ m.created_at[:16] if m.created_at else '' }}</div>
+</div>{% endfor %}
+{% if not messages %}<p style="text-align:center;color:#999;font-size:12px">Aucun message</p>{% endif %}
+</div></div>
+<form method="post" style="margin-top:8px;display:flex;gap:6px">
+<input type="text" name="message" required placeholder="Votre message..." style="flex:1;padding:10px;border:1.5px solid #ddd;border-radius:20px">
+<button type="submit" class="btn btn-primary" style="border-radius:20px;padding:10px 16px">📤</button>
+</form>
+
+{% elif page == 'client_requests' %}
+<div class="page-header"><h1>📩 Demandes clients</h1></div>
+{% if requests_list %}
+<div class="card"><div class="card-body" style="padding:0">
+<div class="table-wrap"><table><thead><tr><th>Client</th><th>Titre</th><th>Type</th><th>Priorité</th><th>Statut</th><th>Date</th><th>Actions</th></tr></thead>
+<tbody>{% for r in requests_list %}<tr>
+<td><strong>{{ r.client_name or '-' }}</strong></td><td>{{ r.title }}</td><td>{{ r.type }}</td>
+<td><span style="padding:2px 6px;border-radius:8px;font-size:9px;{% if r.priority=='urgente' %}background:#fde8e8;color:#c53030{% elif r.priority=='haute' %}background:#fff3e0;color:#e8672a{% else %}background:#f0f4f8;color:#555{% endif %}">{{ r.priority }}</span></td>
+<td><span style="padding:2px 6px;border-radius:8px;font-size:9px;{% if r.status=='soumise' %}background:#fff3e0;color:#e8672a{% elif r.status=='convertie' %}background:#e3f2fd;color:#1A7A6D{% else %}background:#f0f0f0;color:#555{% endif %}">{{ r.status }}</span></td>
+<td style="font-size:11px">{{ r.created_at[:10] if r.created_at else '-' }}</td>
+<td>{% if r.status=='soumise' %}
+<details><summary class="btn btn-sm" style="background:#1A7A6D;color:#fff;font-size:9px">🔧 Convertir</summary>
+<form method="post" action="/admin/client-requests/{{ r.id }}/convert" style="padding:8px;background:#f8faf9;border-radius:6px;margin-top:4px">
+<select name="technician_id" style="width:100%;padding:4px;margin-bottom:4px;border:1px solid #ddd;border-radius:4px;font-size:11px">{% for t in technicians %}<option value="{{ t.id }}">{{ t.full_name }}</option>{% endfor %}</select>
+<input type="date" name="scheduled_date" style="width:100%;padding:4px;margin-bottom:4px;border:1px solid #ddd;border-radius:4px;font-size:11px" value="{{ r.created_at[:10] if r.created_at else '' }}">
+<button type="submit" class="btn btn-primary btn-sm" style="width:100%;font-size:10px">✅ Convertir en intervention</button>
+</form></details>
+{% else %}✅{% endif %}</td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:30px">Aucune demande</div></div>{% endif %}
+
+{% elif page == 'client_users' %}
+<div class="page-header"><h1>👤 Comptes portail clients</h1>
+<button class="btn btn-primary btn-sm" onclick="document.getElementById('addCUM').classList.add('active')">+ Compte client</button></div>
+{% if users_list %}
+<div class="card"><div class="card-body" style="padding:0">
+<div class="table-wrap"><table><thead><tr><th>Client</th><th>Identifiant</th><th>Nom</th><th>Email</th><th>Dernière connexion</th></tr></thead>
+<tbody>{% for u in users_list %}<tr>
+<td><strong>{{ u.client_name or '-' }}</strong></td><td>{{ u.username }}</td><td>{{ u.full_name or '-' }}</td>
+<td>{{ u.email or '-' }}</td><td style="font-size:11px">{{ u.last_login[:16] if u.last_login else 'Jamais' }}</td>
+</tr>{% endfor %}</tbody></table></div></div></div>
+{% else %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:30px">Aucun compte client</div></div>{% endif %}
+
+<div class="modal-bg" id="addCUM"><div class="modal" style="max-width:450px"><h3>👤 Nouveau compte client</h3>
+<form method="post" action="/admin/client-users/add">
+<div class="form-group"><label>Client *</label><select name="client_id" required>{% for cl in clients %}<option value="{{ cl.id }}">{{ cl.name }}</option>{% endfor %}</select></div>
+<div class="form-row">
+    <div class="form-group"><label>Identifiant *</label><input type="text" name="username" required placeholder="orange_ci"></div>
+    <div class="form-group"><label>Mot de passe</label><input type="text" name="password" value="client2026" placeholder="client2026"></div>
+</div>
+<div class="form-group"><label>Nom complet</label><input type="text" name="full_name" placeholder="M. Directeur Technique"></div>
+<div class="form-row">
+    <div class="form-group"><label>Email</label><input type="email" name="email"></div>
+    <div class="form-group"><label>Téléphone</label><input type="text" name="tel"></div>
+</div>
+<div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-outline" onclick="this.closest('.modal-bg').classList.remove('active')">Annuler</button>
+<button type="submit" class="btn btn-primary">👤 Créer</button></div>
+</form></div></div>
+
 {% elif page == 'interventions' %}
 <div class="page-header"><h1>🔧 Interventions</h1>
 <button class="btn btn-primary btn-sm" onclick="document.getElementById('addIntM').classList.add('active')">+ Intervention</button></div>

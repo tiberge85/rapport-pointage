@@ -161,6 +161,8 @@ from models import migrate_v40
 migrate_v40()
 from models import migrate_v41
 migrate_v41()
+from models import migrate_v42
+migrate_v42()
 from models import migrate_v31
 migrate_v31()
 from models import migrate_v32
@@ -183,6 +185,8 @@ from models import migrate_v40
 migrate_v40()
 from models import migrate_v41
 migrate_v41()
+from models import migrate_v42
+migrate_v42()
 from models import migrate_v27
 migrate_v27()
 from models import migrate_v28
@@ -213,6 +217,8 @@ from models import migrate_v40
 migrate_v40()
 from models import migrate_v41
 migrate_v41()
+from models import migrate_v42
+migrate_v42()
 from models import migrate_v31
 migrate_v31()
 from models import migrate_v32
@@ -235,6 +241,8 @@ from models import migrate_v40
 migrate_v40()
 from models import migrate_v41
 migrate_v41()
+from models import migrate_v42
+migrate_v42()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -4436,6 +4444,284 @@ def api_notif_count():
     except Exception as e:
         import sys; print(f"NOTIF_API_ERR: {e}", file=sys.stderr)
         return jsonify({'count': 0})
+
+
+
+
+# ======================== PORTAIL CLIENT ========================
+
+@app.route('/portail')
+def portail_login_page():
+    if 'client_user_id' in session:
+        return redirect('/portail/dashboard')
+    return render_template('extra_pages.html', page='portail_login')
+
+@app.route('/portail/login', methods=['POST'])
+def portail_login():
+    username = request.form.get('username','')
+    password = request.form.get('password','')
+    conn = _gdb()
+    cu = conn.execute("SELECT * FROM client_users WHERE username=? AND is_active=1", (username,)).fetchone()
+    if cu:
+        cu = dict(cu)
+        import hashlib
+        ph = hashlib.sha256((password + (cu.get('salt','') or '')).encode()).hexdigest()
+        if ph == cu['password_hash']:
+            session['client_user_id'] = cu['id']
+            session['client_id'] = cu['client_id']
+            session['client_name'] = cu['full_name']
+            conn.execute("UPDATE client_users SET last_login=? WHERE id=?", (datetime.now().isoformat(), cu['id']))
+            conn.commit(); conn.close()
+            return redirect('/portail/dashboard')
+    conn.close()
+    flash("Identifiants incorrects", "error")
+    return redirect('/portail')
+
+@app.route('/portail/logout')
+def portail_logout():
+    session.pop('client_user_id', None)
+    session.pop('client_id', None)
+    session.pop('client_name', None)
+    return redirect('/portail')
+
+def portail_required(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if 'client_user_id' not in session:
+            return redirect('/portail')
+        return f(*args, **kwargs)
+    return decorated
+
+@app.route('/portail/dashboard')
+@portail_required
+def portail_dashboard():
+    conn = _gdb()
+    cid = session['client_id']
+    data = {}
+    data['requests'] = [dict(r) for r in conn.execute("SELECT * FROM client_requests WHERE client_id=? ORDER BY created_at DESC LIMIT 10", (cid,)).fetchall()]
+    data['interventions'] = [dict(r) for r in conn.execute("SELECT * FROM interventions WHERE client_id=? ORDER BY scheduled_date DESC LIMIT 10", (cid,)).fetchall()]
+    data['invoices'] = [dict(r) for r in conn.execute("SELECT * FROM invoices WHERE client_id=? ORDER BY created_at DESC LIMIT 10", (cid,)).fetchall()]
+    data['pending'] = len([r for r in data['requests'] if r['status'] in ('soumise','en_cours')])
+    data['total_interventions'] = len(data['interventions'])
+    conn.close()
+    return render_template('extra_pages.html', page='portail_dashboard', data=data)
+
+@app.route('/portail/demande', methods=['GET','POST'])
+@portail_required
+def portail_demande():
+    if request.method == 'POST':
+        conn = _gdb()
+        conn.execute("INSERT INTO client_requests (client_id, client_user_id, title, type, priority, description, site_address) VALUES (?,?,?,?,?,?,?)",
+            (session['client_id'], session['client_user_id'], request.form.get('title',''),
+             request.form.get('type','intervention'), request.form.get('priority','normale'),
+             request.form.get('description',''), request.form.get('site_address','')))
+        req_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        # Notify admins/technicians
+        users = conn.execute("SELECT id FROM users WHERE role IN ('admin','technicien','resp_projet') AND is_active=1").fetchall()
+        for u in users:
+            conn.execute("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
+                (u['id'], 'client_request', f"📩 Nouvelle demande client — {session.get('client_name','')}",
+                 f"{request.form.get('title','')}", f"/admin/client-requests"))
+        conn.commit(); conn.close()
+        flash("Demande soumise avec succès", "success")
+        return redirect('/portail/dashboard')
+    return render_template('extra_pages.html', page='portail_demande')
+
+@app.route('/portail/interventions')
+@portail_required
+def portail_interventions():
+    conn = _gdb()
+    interventions = [dict(r) for r in conn.execute("SELECT * FROM interventions WHERE client_id=? ORDER BY scheduled_date DESC", (session['client_id'],)).fetchall()]
+    conn.close()
+    return render_template('extra_pages.html', page='portail_interventions', interventions=interventions)
+
+@app.route('/portail/factures')
+@portail_required
+def portail_factures():
+    conn = _gdb()
+    factures = [dict(r) for r in conn.execute("SELECT * FROM invoices WHERE client_id=? ORDER BY created_at DESC", (session['client_id'],)).fetchall()]
+    conn.close()
+    return render_template('extra_pages.html', page='portail_factures', factures=factures)
+
+@app.route('/portail/messages/<int:rid>', methods=['GET','POST'])
+@portail_required
+def portail_messages(rid):
+    conn = _gdb()
+    req = conn.execute("SELECT * FROM client_requests WHERE id=? AND client_id=?", (rid, session['client_id'])).fetchone()
+    if not req: flash("Demande non trouvée","error"); conn.close(); return redirect('/portail/dashboard')
+    if request.method == 'POST':
+        conn.execute("INSERT INTO client_messages (request_id, client_user_id, sender_type, message) VALUES (?,?,'client',?)",
+            (rid, session['client_user_id'], request.form.get('message','')))
+        conn.commit()
+    messages = [dict(r) for r in conn.execute("SELECT * FROM client_messages WHERE request_id=? ORDER BY created_at ASC", (rid,)).fetchall()]
+    conn.close()
+    return render_template('extra_pages.html', page='portail_messages', req=dict(req), messages=messages)
+
+# === Admin: manage client requests ===
+@app.route('/admin/client-requests')
+@permission_required('admin')
+def admin_client_requests():
+    conn = _gdb()
+    requests_list = [dict(r) for r in conn.execute(
+        "SELECT cr.*, c.name as client_name FROM client_requests cr LEFT JOIN clients c ON cr.client_id=c.id ORDER BY cr.created_at DESC").fetchall()]
+    technicians = [dict(r) for r in conn.execute("SELECT id, full_name FROM users WHERE role IN ('technicien','admin') AND is_active=1").fetchall()]
+    conn.close()
+    return render_template('extra_pages.html', page='client_requests', requests_list=requests_list, technicians=technicians)
+
+@app.route('/admin/client-requests/<int:rid>/convert', methods=['POST'])
+@permission_required('admin')
+def admin_convert_request(rid):
+    conn = _gdb()
+    req = conn.execute("SELECT * FROM client_requests WHERE id=?", (rid,)).fetchone()
+    if not req: flash("Demande non trouvée","error"); conn.close(); return redirect('/admin/client-requests')
+    req = dict(req)
+    tech_id = int(request.form.get('technician_id',0) or 0)
+    tech_name = ''
+    if tech_id:
+        tu = conn.execute("SELECT full_name FROM users WHERE id=?", (tech_id,)).fetchone()
+        tech_name = tu['full_name'] if tu else ''
+    client = conn.execute("SELECT name FROM clients WHERE id=?", (req['client_id'],)).fetchone()
+    client_name = client['name'] if client else ''
+    ref = f"INT-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    conn.execute("""INSERT INTO interventions (reference, title, type, client_id, client_name, site_address,
+        technician_id, technician_name, scheduled_date, priority, description, is_billable, created_by)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?)""",
+        (ref, req['title'], req.get('type','intervention'), req['client_id'], client_name,
+         req.get('site_address',''), tech_id, tech_name,
+         request.form.get('scheduled_date', datetime.now().strftime('%Y-%m-%d')),
+         req.get('priority','normale'), req.get('description',''), session['user_id']))
+    int_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.execute("UPDATE client_requests SET status='convertie', intervention_id=?, assigned_to=? WHERE id=?", (int_id, tech_id, rid))
+    # Notify technician
+    if tech_id:
+        conn.execute("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
+            (tech_id, 'intervention', f"🔧 Intervention {ref} — {client_name}", req['title'], '/interventions/tech'))
+    conn.commit(); conn.close()
+    flash(f"Demande convertie en intervention {ref}", "success")
+    return redirect('/admin/client-requests')
+
+@app.route('/admin/client-users')
+@permission_required('admin')
+def admin_client_users():
+    conn = _gdb()
+    users_list = [dict(r) for r in conn.execute(
+        "SELECT cu.*, c.name as client_name FROM client_users cu LEFT JOIN clients c ON cu.client_id=c.id ORDER BY cu.created_at DESC").fetchall()]
+    clients = [dict(r) for r in conn.execute("SELECT id, name FROM clients ORDER BY name").fetchall()]
+    conn.close()
+    return render_template('extra_pages.html', page='client_users', users_list=users_list, clients=clients)
+
+@app.route('/admin/client-users/add', methods=['POST'])
+@permission_required('admin')
+def admin_client_user_add():
+    import hashlib, secrets
+    salt = secrets.token_hex(16)
+    pw = request.form.get('password','client2026')
+    ph = hashlib.sha256((pw + salt).encode()).hexdigest()
+    conn = _gdb()
+    try:
+        conn.execute("INSERT INTO client_users (client_id, username, password_hash, salt, full_name, email, tel) VALUES (?,?,?,?,?,?,?)",
+            (int(request.form.get('client_id',0)), request.form.get('username',''),
+             ph, salt, request.form.get('full_name',''),
+             request.form.get('email',''), request.form.get('tel','')))
+        conn.commit(); flash("Compte client créé", "success")
+    except: flash("Ce nom d'utilisateur existe déjà","error")
+    conn.close()
+    return redirect('/admin/client-users')
+
+
+# ======================== MULTI-CAISSES ========================
+
+@app.route('/comptabilite/caisses')
+@permission_required('comptabilite')
+def compta_caisses():
+    conn = _gdb()
+    caisses = [dict(r) for r in conn.execute("SELECT * FROM caisses ORDER BY name").fetchall()]
+    # Recalculate solde for each caisse
+    for ca in caisses:
+        entrees = conn.execute("SELECT COALESCE(SUM(amount),0) FROM caisse_operations WHERE caisse_id=? AND type='entree'", (ca['id'],)).fetchone()[0]
+        sorties = conn.execute("SELECT COALESCE(SUM(amount),0) FROM caisse_operations WHERE caisse_id=? AND type='sortie'", (ca['id'],)).fetchone()[0]
+        trans_in = conn.execute("SELECT COALESCE(SUM(amount),0) FROM caisse_operations WHERE dest_caisse_id=? AND type='transfert'", (ca['id'],)).fetchone()[0]
+        trans_out = conn.execute("SELECT COALESCE(SUM(amount),0) FROM caisse_operations WHERE source_caisse_id=? AND type='transfert'", (ca['id'],)).fetchone()[0]
+        ca['solde_calcule'] = ca['solde_initial'] + entrees + trans_in - sorties - trans_out
+        ca['nb_ops'] = conn.execute("SELECT COUNT(*) FROM caisse_operations WHERE caisse_id=?", (ca['id'],)).fetchone()[0]
+    users = [dict(r) for r in conn.execute("SELECT id, full_name FROM users WHERE is_active=1").fetchall()]
+    total = sum(ca['solde_calcule'] for ca in caisses)
+    conn.close()
+    return render_template('extra_pages.html', page='caisses', caisses=caisses, users=users, total=total)
+
+@app.route('/comptabilite/caisses/add', methods=['POST'])
+@permission_required('comptabilite_edit')
+def compta_caisse_add():
+    conn = _gdb()
+    resp_id = int(request.form.get('responsible_id',0) or 0)
+    resp_name = ''
+    if resp_id:
+        u = conn.execute("SELECT full_name FROM users WHERE id=?", (resp_id,)).fetchone()
+        resp_name = u['full_name'] if u else ''
+    solde = float(request.form.get('solde_initial',0) or 0)
+    conn.execute("INSERT INTO caisses (name, description, responsible_id, responsible_name, solde_initial, solde_actuel, created_by) VALUES (?,?,?,?,?,?,?)",
+        (request.form.get('name',''), request.form.get('description',''), resp_id, resp_name, solde, solde, session['user_id']))
+    conn.commit(); conn.close()
+    flash("Caisse créée", "success")
+    return redirect('/comptabilite/caisses')
+
+@app.route('/comptabilite/caisses/<int:cid>')
+@permission_required('comptabilite')
+def compta_caisse_detail(cid):
+    conn = _gdb()
+    caisse = conn.execute("SELECT * FROM caisses WHERE id=?", (cid,)).fetchone()
+    if not caisse: flash("Caisse non trouvée","error"); conn.close(); return redirect('/comptabilite/caisses')
+    caisse = dict(caisse)
+    period = request.args.get('period', datetime.now().strftime('%Y-%m'))
+    operations = [dict(r) for r in conn.execute(
+        "SELECT * FROM caisse_operations WHERE caisse_id=? AND strftime('%%Y-%%m',created_at)=? ORDER BY created_at DESC", (cid, period)).fetchall()]
+    all_ops = [dict(r) for r in conn.execute("SELECT * FROM caisse_operations WHERE caisse_id=? ORDER BY created_at DESC", (cid,)).fetchall()]
+    entrees = sum(o['amount'] for o in all_ops if o['type']=='entree')
+    sorties = sum(o['amount'] for o in all_ops if o['type']=='sortie')
+    trans_in = conn.execute("SELECT COALESCE(SUM(amount),0) FROM caisse_operations WHERE dest_caisse_id=? AND type='transfert'", (cid,)).fetchone()[0]
+    trans_out = conn.execute("SELECT COALESCE(SUM(amount),0) FROM caisse_operations WHERE source_caisse_id=? AND type='transfert'", (cid,)).fetchone()[0]
+    caisse['solde_calcule'] = caisse['solde_initial'] + entrees + trans_in - sorties - trans_out
+    other_caisses = [dict(r) for r in conn.execute("SELECT id, name FROM caisses WHERE id!=? AND is_active=1", (cid,)).fetchall()]
+    banks = [dict(r) for r in conn.execute("SELECT id, name FROM bank_accounts").fetchall()]
+    conn.close()
+    return render_template('extra_pages.html', page='caisse_detail', caisse=caisse, operations=operations,
+        period=period, other_caisses=other_caisses, banks=banks)
+
+@app.route('/comptabilite/caisses/<int:cid>/operation', methods=['POST'])
+@permission_required('comptabilite_edit')
+def compta_caisse_operation(cid):
+    conn = _gdb()
+    op_type = request.form.get('type','entree')
+    amount = float(request.form.get('amount',0) or 0)
+    if amount <= 0: flash("Montant invalide","error"); conn.close(); return redirect(f'/comptabilite/caisses/{cid}')
+    
+    ref = f"OP-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    
+    if op_type == 'transfert_caisse':
+        dest_id = int(request.form.get('dest_caisse_id',0) or 0)
+        conn.execute("INSERT INTO caisse_operations (caisse_id, type, amount, description, reference, category, source_caisse_id, dest_caisse_id, created_by) VALUES (?,'transfert',?,?,?,?,?,?,?)",
+            (cid, amount, request.form.get('description','Transfert inter-caisses'), ref, 'transfert', cid, dest_id, session['user_id']))
+        auto_ecriture(conn, datetime.now().strftime('%Y-%m-%d'), f"Transfert caisse {ref}", '580', '580', amount, ref)
+    elif op_type == 'transfert_banque':
+        bank_id = int(request.form.get('bank_account_id',0) or 0)
+        conn.execute("INSERT INTO caisse_operations (caisse_id, type, amount, description, reference, category, bank_account_id, created_by) VALUES (?,'sortie',?,?,?,?,?,?)",
+            (cid, amount, request.form.get('description','Versement banque'), ref, 'banque', bank_id, session['user_id']))
+        auto_ecriture(conn, datetime.now().strftime('%Y-%m-%d'), f"Versement banque {ref}", '521', '571', amount, ref)
+    else:
+        conn.execute("INSERT INTO caisse_operations (caisse_id, type, amount, description, reference, category, intervention_id, project_id, created_by) VALUES (?,?,?,?,?,?,?,?,?)",
+            (cid, op_type, amount, request.form.get('description',''), ref, request.form.get('category','divers'),
+             int(request.form.get('intervention_id',0) or 0) or None,
+             int(request.form.get('project_id',0) or 0) or None, session['user_id']))
+        if op_type == 'entree':
+            auto_ecriture(conn, datetime.now().strftime('%Y-%m-%d'), f"Entrée caisse {ref}", '571', '758', amount, ref)
+        else:
+            auto_ecriture(conn, datetime.now().strftime('%Y-%m-%d'), f"Sortie caisse {ref}", '658', '571', amount, ref)
+    
+    conn.commit(); conn.close()
+    user = get_user_by_id(session['user_id'])
+    log_activity(session['user_id'], user['full_name'] if user else '?', 'Caisse', f"{op_type} {ref} — {amount:,.0f} F", request.remote_addr)
+    flash(f"Opération {ref} enregistrée — {amount:,.0f} F", "success")
+    return redirect(f'/comptabilite/caisses/{cid}')
 
 
 # ======================== INTERVENTIONS ========================
