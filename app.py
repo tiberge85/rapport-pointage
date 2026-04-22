@@ -167,6 +167,10 @@ from models import migrate_v43
 migrate_v43()
 from models import migrate_v44
 migrate_v44()
+from models import migrate_v45
+migrate_v45()
+from models import migrate_v45
+migrate_v45()
 from models import migrate_v31
 migrate_v31()
 from models import migrate_v32
@@ -195,6 +199,10 @@ from models import migrate_v43
 migrate_v43()
 from models import migrate_v44
 migrate_v44()
+from models import migrate_v45
+migrate_v45()
+from models import migrate_v45
+migrate_v45()
 from models import migrate_v27
 migrate_v27()
 from models import migrate_v28
@@ -231,6 +239,10 @@ from models import migrate_v43
 migrate_v43()
 from models import migrate_v44
 migrate_v44()
+from models import migrate_v45
+migrate_v45()
+from models import migrate_v45
+migrate_v45()
 from models import migrate_v31
 migrate_v31()
 from models import migrate_v32
@@ -259,6 +271,10 @@ from models import migrate_v43
 migrate_v43()
 from models import migrate_v44
 migrate_v44()
+from models import migrate_v45
+migrate_v45()
+from models import migrate_v45
+migrate_v45()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -4579,6 +4595,12 @@ def portail_demande():
 def portail_interventions():
     conn = _gdb()
     interventions = [dict(r) for r in conn.execute("SELECT * FROM interventions WHERE client_id=? ORDER BY scheduled_date DESC", (session['client_id'],)).fetchall()]
+    # Load daily reports for each intervention
+    for inter in interventions:
+        try:
+            inter['daily_reports'] = [dict(r) for r in conn.execute(
+                "SELECT * FROM intervention_daily_reports WHERE intervention_id=? ORDER BY date DESC", (inter['id'],)).fetchall()]
+        except: inter['daily_reports'] = []
     conn.close()
     return render_template('extra_pages.html', page='portail_interventions', interventions=interventions)
 
@@ -4820,12 +4842,101 @@ def interventions_programme():
 @login_required
 def intervention_daily_report(iid):
     conn = _gdb()
-    conn.execute("INSERT INTO intervention_daily_reports (intervention_id, date, report, progress, technician_id) VALUES (?,?,?,?,?)",
+    # Save images
+    img_names = []
+    files = request.files.getlist('photos')
+    for f in files:
+        if f and f.filename:
+            ext = os.path.splitext(f.filename)[1].lower()
+            if ext in ('.jpg','.jpeg','.png','.webp'):
+                fname = f"int_{iid}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{len(img_names)}{ext}"
+                fdir = os.path.join(app.config['UPLOAD_FOLDER'], 'interventions')
+                os.makedirs(fdir, exist_ok=True)
+                f.save(os.path.join(fdir, fname))
+                img_names.append(fname)
+    
+    conn.execute("""INSERT INTO intervention_daily_reports 
+        (intervention_id, date, report, progress, technician_id, images) VALUES (?,?,?,?,?,?)""",
         (iid, datetime.now().strftime('%Y-%m-%d'), request.form.get('report',''),
-         int(request.form.get('progress',0) or 0), session['user_id']))
+         int(request.form.get('progress',0) or 0), session['user_id'],
+         ','.join(img_names)))
     conn.commit(); conn.close()
-    flash("Rapport journalier enregistré", "success")
+    flash("Rapport enregistré avec photos", "success")
     return redirect(request.referrer or '/interventions/tech')
+
+@app.route('/uploads/interventions/<path:filename>')
+def intervention_file(filename):
+    return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'interventions'), filename)
+
+@app.route('/interventions/<int:iid>/quality', methods=['POST'])
+@login_required
+def intervention_quality(iid):
+    """Coordinateur fait le contrôle qualité."""
+    conn = _gdb()
+    # Save quality photos
+    img_names = []
+    files = request.files.getlist('photos')
+    for f in files:
+        if f and f.filename:
+            ext = os.path.splitext(f.filename)[1].lower()
+            if ext in ('.jpg','.jpeg','.png','.webp'):
+                fname = f"qc_{iid}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{len(img_names)}{ext}"
+                fdir = os.path.join(app.config['UPLOAD_FOLDER'], 'interventions')
+                os.makedirs(fdir, exist_ok=True)
+                f.save(os.path.join(fdir, fname))
+                img_names.append(fname)
+    
+    conn.execute("""UPDATE interventions SET quality_report=?, quality_date=?, quality_by=?, status='controle_qualite' WHERE id=?""",
+        (request.form.get('quality_report','') + ('\n📸 ' + ','.join(img_names) if img_names else ''),
+         datetime.now().strftime('%Y-%m-%d'), session['user_id'], iid))
+    conn.commit(); conn.close()
+    flash("Contrôle qualité enregistré", "success")
+    return redirect(request.referrer or '/interventions')
+
+@app.route('/interventions/<int:iid>/deliver', methods=['POST'])
+@login_required
+def intervention_deliver(iid):
+    """Livraison du site au client."""
+    conn = _gdb()
+    conn.execute("""UPDATE interventions SET status='livre', delivery_date=?, delivery_note=?, end_date=? WHERE id=?""",
+        (datetime.now().strftime('%Y-%m-%d'), request.form.get('delivery_note',''),
+         datetime.now().strftime('%Y-%m-%d'), iid))
+    
+    inter = conn.execute("SELECT * FROM interventions WHERE id=?", (iid,)).fetchone()
+    if inter:
+        # Auto-billing
+        if inter['is_billable'] and (inter['total_cost'] or 0) > 0:
+            auto_ecriture(conn, datetime.now().strftime('%Y-%m-%d'),
+                f"Livraison {inter['reference']} — {inter['client_name']}",
+                '411', '706', inter['total_cost'] or 0, inter['reference'])
+        # Update linked task
+        if inter['task_id']:
+            conn.execute("UPDATE tasks SET status='terminee' WHERE id=?", (inter['task_id'],))
+    
+    conn.commit(); conn.close()
+    flash("Site livré au client", "success")
+    return redirect(request.referrer or '/interventions')
+
+@app.route('/portail/intervention/<int:iid>/validate', methods=['POST'])
+@portail_required
+def portail_validate_intervention(iid):
+    """Client valide les travaux terminés."""
+    conn = _gdb()
+    inter = conn.execute("SELECT * FROM interventions WHERE id=? AND client_id=?", (iid, session['client_id'])).fetchone()
+    if inter and inter['status'] == 'travaux_termines':
+        conn.execute("UPDATE interventions SET client_validated=1, client_validation_date=? WHERE id=?",
+            (datetime.now().strftime('%Y-%m-%d'), iid))
+        # Notify coordinator
+        users = conn.execute("SELECT id FROM users WHERE role IN ('admin','resp_projet') AND is_active=1").fetchall()
+        for u in users:
+            conn.execute("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
+                (u['id'], 'intervention', f"✅ Client a validé — {inter['client_name']}",
+                 f"Intervention {inter['reference']} validée par le client. Contrôle qualité requis.",
+                 f"/interventions/{iid}/fiche"))
+        conn.commit()
+        flash("Travaux validés. Le coordinateur va procéder au contrôle qualité.", "success")
+    conn.close()
+    return redirect('/portail/interventions')
 
 # ======================== MODULE RESET ========================
 
@@ -5053,59 +5164,64 @@ def intervention_add():
 @app.route('/interventions/<int:iid>/status/<status>')
 @login_required
 def intervention_status(iid, status):
-    valid = ('planifiee','en_cours','terminee','annulee')
+    valid = ('planifiee','en_cours','travaux_termines','controle_qualite','livre','annulee')
     if status not in valid: flash("Statut invalide","error"); return redirect('/interventions')
     conn = _gdb()
     inter = conn.execute("SELECT * FROM interventions WHERE id=?", (iid,)).fetchone()
     if inter:
         updates = {'status': status}
         if status == 'en_cours': updates['start_date'] = datetime.now().strftime('%Y-%m-%d')
-        if status == 'terminee': updates['end_date'] = datetime.now().strftime('%Y-%m-%d')
+        if status == 'livre': updates['end_date'] = datetime.now().strftime('%Y-%m-%d')
         set_clause = ', '.join(f"{k}=?" for k in updates)
         conn.execute(f"UPDATE interventions SET {set_clause} WHERE id=?", (*updates.values(), iid))
         
-        # Update linked task
-        if inter['task_id']:
-            task_status = 'terminee' if status == 'terminee' else 'en_cours'
-            conn.execute("UPDATE tasks SET status=? WHERE id=?", (task_status, inter['task_id']))
+        # Notify on status changes
+        if status == 'travaux_termines':
+            # Notify client + coordinator
+            for role in ('admin','resp_projet'):
+                for u in conn.execute("SELECT id FROM users WHERE role=? AND is_active=1", (role,)).fetchall():
+                    conn.execute("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
+                        (u['id'], 'intervention', f"🏗️ Travaux terminés — {inter['client_name']}",
+                         f"{inter['reference']}: {inter['title']}. En attente de validation client.", f"/interventions/{iid}/fiche"))
         
-        # Auto-generate billing if terminee and billable
-        if status == 'terminee' and inter['is_billable'] and inter['total_cost']:
-            auto_ecriture(conn, datetime.now().strftime('%Y-%m-%d'),
-                f"Intervention {inter['reference']} — {inter['client_name']}",
-                '411', '706', inter['total_cost'] or 0, inter['reference'])
+        if status == 'livre':
+            # Auto-billing on delivery
+            if inter['is_billable'] and (inter['total_cost'] or 0) > 0:
+                auto_ecriture(conn, datetime.now().strftime('%Y-%m-%d'),
+                    f"Livraison {inter['reference']} — {inter['client_name']}",
+                    '411', '706', inter['total_cost'] or 0, inter['reference'])
+            if inter['task_id']:
+                conn.execute("UPDATE tasks SET status='terminee' WHERE id=?", (inter['task_id'],))
         
         conn.commit()
-        flash(f"Statut → {status}", "success")
+        labels = {'en_cours':'En cours','travaux_termines':'Travaux terminés','controle_qualite':'Contrôle qualité','livre':'Livré','annulee':'Annulée'}
+        flash(f"Statut → {labels.get(status, status)}", "success")
     conn.close()
     return redirect(request.referrer or '/interventions')
 
 @app.route('/interventions/<int:iid>/rapport', methods=['POST'])
 @login_required
 def intervention_rapport(iid):
+    """Rapport final du technicien — met les coûts mais NE TERMINE PAS. Statut → travaux_termines."""
     conn = _gdb()
     material_cost = float(request.form.get('material_cost',0) or 0)
     labor_cost = float(request.form.get('labor_cost',0) or 0)
     conn.execute("""UPDATE interventions SET rapport=?, material_used=?, material_cost=?, 
-        labor_cost=?, total_cost=?, duration_hours=?, status='terminee', end_date=? WHERE id=?""",
+        labor_cost=?, total_cost=?, duration_hours=?, status='travaux_termines' WHERE id=?""",
         (request.form.get('rapport',''), request.form.get('material_used',''),
          material_cost, labor_cost, material_cost + labor_cost,
-         float(request.form.get('duration_hours',0) or 0),
-         datetime.now().strftime('%Y-%m-%d'), iid))
+         float(request.form.get('duration_hours',0) or 0), iid))
     
-    # Auto-billing
+    # Notify coordinator + client
     inter = conn.execute("SELECT * FROM interventions WHERE id=?", (iid,)).fetchone()
-    if inter and inter['is_billable'] and (material_cost + labor_cost) > 0:
-        auto_ecriture(conn, datetime.now().strftime('%Y-%m-%d'),
-            f"Intervention {inter['reference']} — {inter['client_name']}",
-            '411', '706', material_cost + labor_cost, inter['reference'])
-    
-    # Update linked task
-    if inter and inter['task_id']:
-        conn.execute("UPDATE tasks SET status='terminee' WHERE id=?", (inter['task_id'],))
+    if inter:
+        for u in conn.execute("SELECT id FROM users WHERE role IN ('admin','resp_projet') AND is_active=1").fetchall():
+            conn.execute("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
+                (u['id'], 'intervention', f"🏗️ Travaux terminés — {inter['client_name']}",
+                 f"{inter['reference']}: En attente validation client puis contrôle qualité", f"/interventions/{iid}/fiche"))
     
     conn.commit(); conn.close()
-    flash("Rapport d'intervention enregistré", "success")
+    flash("Rapport final soumis — En attente de validation client", "success")
     return redirect('/interventions/tech')
 
 

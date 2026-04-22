@@ -639,7 +639,8 @@ new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes'
         <div style="display:flex;gap:4px;flex-wrap:wrap" class="no-print">
             <a href="/interventions/{{ i.id }}/fiche" class="btn btn-outline btn-sm" style="font-size:9px" target="_blank">📄 Fiche</a>
             {% if i.status=='planifiee' %}<a href="/interventions/{{ i.id }}/status/en_cours" class="btn btn-sm" style="background:#1A7A6D;color:#fff;font-size:9px">▶ Démarrer</a>{% endif %}
-            {% if i.status=='en_cours' %}<a href="/interventions/{{ i.id }}/status/terminee" class="btn btn-sm" style="background:#2e7d32;color:#fff;font-size:9px" onclick="return confirm('Terminer définitivement ?')">✅ Terminer</a>{% endif %}
+            {% if i.status=='travaux_termines' %}<a href="/interventions/{{ i.id }}/status/controle_qualite" class="btn btn-sm" style="background:#7b1fa2;color:#fff;font-size:9px">🔍 CQ</a>{% endif %}
+            {% if i.status=='controle_qualite' %}<a href="/interventions/{{ i.id }}/status/livre" class="btn btn-sm" style="background:#2e7d32;color:#fff;font-size:9px">📦 Livrer</a>{% endif %}
         </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:8px">
@@ -653,13 +654,18 @@ new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes'
     <!-- Rapport journalier -->
     <div class="no-print" style="margin-top:10px;padding:10px;background:#f8faf9;border-radius:8px">
         <div style="font-size:11px;font-weight:700;color:#1A7A6D;margin-bottom:6px">📝 Rapport du jour</div>
-        <form method="post" action="/interventions/{{ i.id }}/daily-report" style="display:flex;gap:6px;flex-wrap:wrap">
-            <input type="text" name="report" required placeholder="Avancement du jour..." style="flex:1;min-width:200px;padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
-            <select name="progress" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:11px">
-                <option value="10">10%</option><option value="25">25%</option><option value="50" selected>50%</option>
-                <option value="75">75%</option><option value="90">90%</option><option value="100">100%</option>
-            </select>
-            <button type="submit" class="btn btn-primary btn-sm" style="font-size:10px">📝 Enregistrer</button>
+        <form method="post" action="/interventions/{{ i.id }}/daily-report" enctype="multipart/form-data">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+                <input type="text" name="report" required placeholder="Avancement du jour..." style="flex:1;min-width:200px;padding:6px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+                <select name="progress" style="padding:6px;border:1px solid #ddd;border-radius:6px;font-size:11px">
+                    <option value="10">10%</option><option value="25">25%</option><option value="50" selected>50%</option>
+                    <option value="75">75%</option><option value="90">90%</option><option value="100">100%</option>
+                </select>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center">
+                <label style="font-size:10px;color:#888;cursor:pointer;padding:4px 8px;border:1px dashed #ccc;border-radius:6px">📷 Ajouter photos <input type="file" name="photos" multiple accept="image/*" style="display:none" onchange="this.parentElement.textContent='📷 '+this.files.length+' photo(s)'"></label>
+                <button type="submit" class="btn btn-primary btn-sm" style="font-size:10px">📝 Enregistrer le rapport</button>
+            </div>
         </form>
     </div>
     {% endif %}
@@ -669,10 +675,15 @@ new Chart(document.getElementById('cTres'),{type:'line',data:{labels:['Recettes'
     <div style="margin-top:8px">
         <div style="font-size:10px;font-weight:700;color:#888;margin-bottom:4px">Historique des rapports :</div>
         {% for dr in i.daily_reports %}
-        <div style="padding:4px 8px;margin-bottom:2px;background:#f0f4f8;border-radius:4px;font-size:11px;display:flex;gap:8px">
-            <span style="color:#888;min-width:70px">{{ dr.date }}</span>
-            <span style="flex:1">{{ dr.report }}</span>
-            <span style="color:#1A7A6D;font-weight:600">{{ dr.progress }}%</span>
+        <div style="padding:6px 8px;margin-bottom:4px;background:#f0f4f8;border-radius:6px;font-size:11px">
+            <div style="display:flex;gap:8px;align-items:center">
+                <span style="color:#888;min-width:70px;font-weight:600">{{ dr.date }}</span>
+                <span style="flex:1">{{ dr.report }}</span>
+                <span style="padding:2px 6px;background:#e3f2fd;border-radius:8px;color:#1A7A6D;font-weight:700;font-size:10px">{{ dr.progress }}%</span>
+            </div>
+            {% if dr.images %}<div style="display:flex;gap:4px;margin-top:4px;flex-wrap:wrap">
+                {% for img in dr.images.split(',') %}{% if img %}<a href="/uploads/interventions/{{ img }}" target="_blank"><img src="/uploads/interventions/{{ img }}" style="width:60px;height:45px;object-fit:cover;border-radius:4px;border:1px solid #ddd"></a>{% endif %}{% endfor %}
+            </div>{% endif %}
         </div>
         {% endfor %}
     </div>
@@ -1040,12 +1051,44 @@ Total toutes caisses : <span style="color:#1A7A6D">{{ '{:,.0f}'.format(total) }}
     <h2 style="margin:4px 0 0;font-size:16px">🔧 Mes interventions</h2>
 </div>
 {% for i in interventions %}
-<div class="card" style="margin-bottom:10px;border-left:3px solid {% if i.status=='terminee' %}#2e7d32{% elif i.status=='en_cours' %}#1A7A6D{% else %}#e8672a{% endif %}">
-<div class="card-body" style="padding:12px">
-    <div style="display:flex;justify-content:space-between"><strong>{{ i.title }}</strong>
-    <span style="padding:2px 8px;border-radius:8px;font-size:10px;{% if i.status=='terminee' %}background:#e8f5e9;color:#2e7d32{% elif i.status=='en_cours' %}background:#e3f2fd;color:#1A7A6D{% else %}background:#fff3e0;color:#e8672a{% endif %}">{{ i.status }}</span></div>
+<div class="card" style="margin-bottom:12px;border-left:4px solid {% if i.status=='livre' %}#2e7d32{% elif i.status=='controle_qualite' %}#7b1fa2{% elif i.status=='travaux_termines' %}#1565c0{% elif i.status=='en_cours' %}#1A7A6D{% else %}#e8672a{% endif %}">
+<div class="card-body" style="padding:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>{{ i.title }}</strong>
+        <span style="padding:3px 10px;border-radius:8px;font-size:10px;font-weight:700;{% if i.status=='livre' %}background:#e8f5e9;color:#2e7d32{% elif i.status=='controle_qualite' %}background:#f3e5f5;color:#7b1fa2{% elif i.status=='travaux_termines' %}background:#e3f2fd;color:#1565c0{% elif i.status=='en_cours' %}background:#e3f2fd;color:#1A7A6D{% else %}background:#fff3e0;color:#e8672a{% endif %}">
+            {% if i.status=='livre' %}✅ Livré{% elif i.status=='controle_qualite' %}🔍 Contrôle qualité{% elif i.status=='travaux_termines' %}🏗️ Travaux terminés{% elif i.status=='en_cours' %}⚡ En cours{% elif i.status=='planifiee' %}📅 Planifié{% else %}{{ i.status }}{% endif %}
+        </span>
+    </div>
     <div style="font-size:11px;color:#888;margin-top:4px">📅 {{ i.scheduled_date or '-' }} · 🔧 {{ i.technician_name or '-' }} · {{ i.type }}</div>
-    {% if i.rapport %}<div style="font-size:12px;margin-top:6px;padding:8px;background:#f8faf9;border-radius:6px">📝 {{ i.rapport[:100] }}</div>{% endif %}
+    {% if i.rapport %}<div style="font-size:12px;margin-top:6px;padding:8px;background:#f8faf9;border-radius:6px">📝 {{ i.rapport[:120] }}</div>{% endif %}
+    
+    {% if i.status == 'travaux_termines' and (i.client_validated|int) == 0 %}
+    <form method="post" action="/portail/intervention/{{ i.id }}/validate" style="margin-top:8px">
+        <button type="submit" class="btn btn-sm" style="background:#1565c0;color:#fff" onclick="return confirm('Confirmer la validation des travaux ?')">
+            ✅ Valider les travaux
+        </button>
+        <span style="font-size:10px;color:#888;margin-left:6px">Cliquez pour confirmer que les travaux vous conviennent</span>
+    </form>
+    {% endif %}
+    {% if i.client_validated %}<div style="font-size:10px;color:#2e7d32;margin-top:4px">✅ Validé le {{ i.client_validation_date }}</div>{% endif %}
+    
+    {% if i.daily_reports %}
+    <details style="margin-top:6px"><summary style="font-size:11px;color:#1A7A6D;cursor:pointer;font-weight:600">📋 Suivi d'avancement ({{ i.daily_reports|length }} rapport(s))</summary>
+    <div style="margin-top:6px">
+        {% for dr in i.daily_reports %}
+        <div style="padding:8px;margin-bottom:4px;background:#f8faf9;border-radius:6px;font-size:12px">
+            <div style="display:flex;gap:8px;align-items:center">
+                <span style="color:#888;font-weight:600">{{ dr.date }}</span>
+                <span style="flex:1">{{ dr.report }}</span>
+                <span style="padding:2px 8px;background:#e3f2fd;border-radius:8px;color:#1A7A6D;font-weight:700;font-size:11px">{{ dr.progress }}%</span>
+            </div>
+            {% if dr.images %}<div style="display:flex;gap:4px;margin-top:6px;flex-wrap:wrap">
+                {% for img in dr.images.split(',') %}{% if img %}<a href="/uploads/interventions/{{ img }}" target="_blank"><img src="/uploads/interventions/{{ img }}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #ddd"></a>{% endif %}{% endfor %}
+            </div>{% endif %}
+        </div>
+        {% endfor %}
+    </div></details>
+    {% endif %}
 </div></div>
 {% endfor %}
 {% if not interventions %}<div class="card"><div class="card-body" style="text-align:center;color:#999;padding:30px">Aucune intervention</div></div>{% endif %}
@@ -1149,7 +1192,7 @@ Total toutes caisses : <span style="color:#1A7A6D">{{ '{:,.0f}'.format(total) }}
 <td>{{ i.technician_name or '-' }}</td>
 <td>{{ i.scheduled_date or '-' }} {% if i.scheduled_time %}<span style="color:#1A7A6D;font-size:10px">{{ i.scheduled_time }}</span>{% endif %}</td>
 <td><span style="padding:2px 6px;border-radius:8px;font-size:9px;{% if i.priority=='urgente' %}background:#fde8e8;color:#c53030{% elif i.priority=='haute' %}background:#fff3e0;color:#e8672a{% else %}background:#f0f4f8;color:#555{% endif %}">{{ i.priority }}</span></td>
-<td><span style="padding:2px 6px;border-radius:8px;font-size:9px;{% if i.status=='terminee' %}background:#e8f5e9;color:#2e7d32{% elif i.status=='en_cours' %}background:#e3f2fd;color:#1A7A6D{% elif i.status=='annulee' %}background:#fde8e8;color:#c53030{% else %}background:#fff3e0;color:#e8672a{% endif %}">{{ i.status }}</span></td>
+<td><span style="padding:2px 6px;border-radius:8px;font-size:9px;{% if i.status=='livre' %}background:#e8f5e9;color:#2e7d32{% elif i.status=='controle_qualite' %}background:#f3e5f5;color:#7b1fa2{% elif i.status=='travaux_termines' %}background:#e3f2fd;color:#1565c0{% elif i.status=='en_cours' %}background:#e3f2fd;color:#1A7A6D{% elif i.status=='annulee' %}background:#fde8e8;color:#c53030{% else %}background:#fff3e0;color:#e8672a{% endif %}">{{ i.status }}</span></td>
 <td style="white-space:nowrap">
 {% if i.status=='planifiee' %}<a href="/interventions/{{ i.id }}/status/en_cours" class="btn btn-sm" style="background:#1A7A6D;color:#fff;font-size:9px">▶ Démarrer</a>{% endif %}
 {% if i.status=='en_cours' %}<a href="/interventions/{{ i.id }}/status/terminee" class="btn btn-sm" style="background:#2e7d32;color:#fff;font-size:9px">✅ Terminer</a>{% endif %}
@@ -1217,20 +1260,43 @@ Total toutes caisses : <span style="color:#1A7A6D">{{ '{:,.0f}'.format(total) }}
 <div style="padding:12px;border-bottom:1px solid #f0f0f0">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div><strong>{{ i.title }}</strong> · {{ i.client_name or '-' }}</div>
-        <span style="padding:2px 8px;border-radius:8px;font-size:10px;background:#e3f2fd;color:#1A7A6D">En cours</span>
+        <div style="display:flex;gap:4px">
+            <a href="/interventions/{{ i.id }}/fiche" class="btn btn-outline btn-sm" style="font-size:9px" target="_blank">📄 Fiche</a>
+            <span style="padding:2px 8px;border-radius:8px;font-size:10px;background:#e3f2fd;color:#1A7A6D">En cours</span>
+        <a href="/interventions/{{ i.id }}/status/travaux_termines" class="btn btn-sm" style="background:#7b1fa2;color:#fff;font-size:9px" onclick="return confirm('Signaler travaux terminés ?')">🏗️ Travaux finis</a>
+        </div>
     </div>
-    <details style="margin-top:6px"><summary style="font-size:11px;color:#1A7A6D;cursor:pointer">📝 Rédiger le rapport</summary>
-    <form method="post" action="/interventions/{{ i.id }}/rapport" style="margin-top:8px;padding:10px;background:#f8faf9;border-radius:8px">
-        <div class="form-group"><label>Rapport d'intervention</label><textarea name="rapport" rows="3" style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:7px" placeholder="Description des travaux effectués..."></textarea></div>
+    
+    <!-- Rapport journalier avec photos -->
+    <div style="margin-top:6px;padding:10px;background:#f8faf9;border-radius:8px">
+        <div style="font-size:11px;font-weight:700;color:#1A7A6D;margin-bottom:6px">📝 Rapport d'avancement</div>
+        <form method="post" action="/interventions/{{ i.id }}/daily-report" enctype="multipart/form-data">
+            <textarea name="report" required rows="2" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px;margin-bottom:6px" placeholder="Avancement du jour..."></textarea>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                <select name="progress" style="padding:5px;border:1px solid #ddd;border-radius:6px;font-size:11px">
+                    <option value="10">10%</option><option value="25">25%</option><option value="50">50%</option>
+                    <option value="75">75%</option><option value="90">90%</option><option value="100">100%</option>
+                </select>
+                <label style="font-size:11px;cursor:pointer;padding:4px 8px;background:#e3f2fd;border-radius:6px">📸 Photos <input type="file" name="photos" multiple accept="image/*" style="display:none"></label>
+                <button type="submit" class="btn btn-primary btn-sm" style="font-size:10px">📝 Enregistrer</button>
+            </div>
+        </form>
+    </div>
+    
+    <!-- Rapport final (quand prêt à soumettre) -->
+    <details style="margin-top:6px"><summary style="font-size:11px;color:#e8672a;cursor:pointer;font-weight:600">📋 Rapport final + Soumettre les travaux</summary>
+    <form method="post" action="/interventions/{{ i.id }}/rapport" style="margin-top:6px;padding:10px;background:#fff3e0;border-radius:8px">
+        <div class="form-group"><label>Rapport final</label><textarea name="rapport" rows="3" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:7px" placeholder="Bilan complet des travaux..."></textarea></div>
         <div class="form-row">
             <div class="form-group"><label>Matériel utilisé</label><input type="text" name="material_used" placeholder="Câbles, caméras..."></div>
-            <div class="form-group"><label>Durée (h)</label><input type="number" name="duration_hours" step="0.5" min="0" value="1"></div>
+            <div class="form-group"><label>Durée totale (h)</label><input type="number" name="duration_hours" step="0.5" min="0" value="1"></div>
         </div>
         <div class="form-row">
             <div class="form-group"><label>Coût matériel (F)</label><input type="number" name="material_cost" step="1" min="0" value="0"></div>
-            <div class="form-group"><label>Coût main d'œuvre (F)</label><input type="number" name="labor_cost" step="1" min="0" value="0"></div>
+            <div class="form-group"><label>Main d'œuvre (F)</label><input type="number" name="labor_cost" step="1" min="0" value="0"></div>
         </div>
-        <button type="submit" class="btn btn-primary btn-sm">✅ Terminer et enregistrer</button>
+        <button type="submit" class="btn btn-sm" style="background:#e8672a;color:#fff">🏗️ Travaux terminés — Soumettre</button>
+        <div style="font-size:9px;color:#888;margin-top:4px">Le client devra valider avant le contrôle qualité</div>
     </form></details>
 </div>
 {% endfor %}

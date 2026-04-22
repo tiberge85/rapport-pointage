@@ -2219,8 +2219,10 @@ def migrate_v15():
             ('78','Reprises amortissements','actif','produits','7'),
         ]
         for num, lib, typ, cat, cls in comptes:
-            conn.execute("INSERT INTO plan_comptable (numero, libelle, type, categorie, classe) VALUES (?,?,?,?,?)",
-                (num, lib, typ, cat, cls))
+            try:
+                conn.execute("INSERT OR IGNORE INTO plan_comptable (numero, libelle, type, categorie, classe) VALUES (?,?,?,?,?)",
+                    (num, lib, typ, cat, cls))
+            except: pass
     
     conn.commit(); conn.close()
 
@@ -2836,4 +2838,30 @@ def migrate_v44():
             FOREIGN KEY (intervention_id) REFERENCES interventions(id)
         );
     ''')
+    conn.commit(); conn.close()
+
+def migrate_v45():
+    """Intervention workflow: images + quality control."""
+    conn = get_db()
+    for col, typ in [('images','TEXT DEFAULT ""'),('status_note','TEXT DEFAULT ""')]:
+        try: conn.execute(f"ALTER TABLE intervention_daily_reports ADD COLUMN {col} {typ}")
+        except: pass
+    # Intervention quality fields
+    for col, typ in [('quality_report','TEXT DEFAULT ""'),('quality_date','TEXT'),('quality_by','INTEGER'),
+                     ('delivery_date','TEXT'),('delivery_note','TEXT DEFAULT ""'),('client_validated','INTEGER DEFAULT 0'),
+                     ('client_validation_date','TEXT')]:
+        try: conn.execute(f"ALTER TABLE interventions ADD COLUMN {col} {typ}")
+        except: pass
+    conn.commit(); conn.close()
+
+def migrate_v45():
+    """Intervention workflow: images, quality, delivery columns."""
+    conn = get_db()
+    for col, default in [('images',''),('quality_report',''),('quality_date',''),('quality_by','0'),
+                         ('delivery_date',''),('delivery_note',''),
+                         ('client_validated','0'),('client_validation_date','')]:
+        try: conn.execute(f"ALTER TABLE interventions ADD COLUMN {col} TEXT DEFAULT '{default}'")
+        except: pass
+    try: conn.execute("ALTER TABLE intervention_daily_reports ADD COLUMN images TEXT DEFAULT ''")
+    except: pass
     conn.commit(); conn.close()
