@@ -529,7 +529,7 @@ def robots_txt():
 
 @app.route('/favicon.ico')
 def favicon():
-    return send_from_directory(app.config.get('STATIC_FOLDER', 'static'), 'logo_ramya_round.png', mimetype='image/png')
+    return send_from_directory(app.config.get('STATIC_FOLDER', 'static'), 'logo_wannygest.png', mimetype='image/png')
 
 @app.errorhandler(500)
 def internal_error(e):
@@ -1002,7 +1002,7 @@ def traitement_generate():
                 logo_path = os.path.join(job_dir, 'custom_logo.png')
                 lf.save(logo_path)
         if not logo_path:
-            for n in ['logo_ramya.png', 'logo_ramya_round.png']:
+            for n in ['logo_ramya.png', 'logo_wannygest.png']:
                 c = os.path.join(BASE_DIR, n)
                 if os.path.exists(c):
                     logo_path = os.path.join(job_dir, n)
@@ -1354,13 +1354,14 @@ def clients_edit(cid):
 @app.route('/clients/delete/<int:cid>')
 @permission_required('clients_edit')
 def clients_delete(cid):
-    delete_client(cid)
-    flash("Client supprimé", "success")
-    # Return to the referrer page (preserves search, pagination, tab)
-    ref = request.referrer or ''
-    # Only use referrer if it's from our own app, otherwise fallback
-    if ref and request.host in ref:
-        return redirect(ref)
+    ok = delete_client(cid)
+    if ok:
+        flash("✅ Client supprimé", "success")
+    else:
+        flash("❌ Impossible de supprimer ce client. Il est probablement référencé par des documents (devis, factures, interventions).", "error")
+    return_to = request.args.get('return_to') or request.referrer or ''
+    if return_to and request.host in return_to:
+        return redirect(return_to)
     return redirect(url_for('clients_page'))
 
 
@@ -1371,7 +1372,7 @@ def clients_delete(cid):
 def admin_page():
     users = get_all_users()
     stats = get_dashboard_stats()
-    role_perms = {r: get_role_permissions(r) for r in ['admin', 'dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique', 'resp_projet', 'concierge', 'proprietaire', 'secretaire']}
+    role_perms = {r: get_role_permissions(r) for r in ['admin', 'dg', 'rh', 'technicien', 'commercial', 'comptable', 'moyens_generaux', 'informatique', 'resp_projet', 'coordinateur', 'concierge', 'secretaire']}
     conn = _gdb()
     try:
         tenders = [dict(r) for r in conn.execute("SELECT * FROM tender_links ORDER BY active DESC, deadline ASC").fetchall()]
@@ -1628,8 +1629,8 @@ def pwa_manifest():
         "background_color": "#0d2137",
         "theme_color": "#1a3a5c",
         "icons": [
-            {"src": "/static/logo_ramya_round.png", "sizes": "192x192", "type": "image/png"},
-            {"src": "/static/logo_ramya_round.png", "sizes": "512x512", "type": "image/png"}
+            {"src": "/static/logo_wannygest.png", "sizes": "192x192", "type": "image/png"},
+            {"src": "/static/logo_wannygest.png", "sizes": "512x512", "type": "image/png"}
         ]
     }
     return jsonify(manifest)
@@ -3429,7 +3430,7 @@ def devis_pdf(did):
                 dt = datetime.strptime(ca[:19], '%Y-%m-%d %H:%M:%S')
                 devis['redacteur_date'] = dt.strftime('%d/%m/%Y à %H:%M')
             except: devis['redacteur_date'] = ca[:16]
-    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_ramya_round.png"] if os.path.exists(os.path.join(BASE_DIR, n))), None)
+    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_wannygest.png"] if os.path.exists(os.path.join(BASE_DIR, n))), None)
     generate_devis_pdf(devis, output, logo_path=logo_r)
     
     return send_file(output, as_attachment=True, download_name=f"{devis['reference']}.pdf")
@@ -3546,7 +3547,7 @@ def devis_preview(did):
     os.makedirs(export_dir, exist_ok=True)
     output = os.path.join(export_dir, f"preview_{devis['reference']}.pdf")
     devis['date'] = devis.get('created_at', '')[:10]
-    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_ramya_round.png"] if os.path.exists(os.path.join(BASE_DIR, n))), None)
+    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_wannygest.png"] if os.path.exists(os.path.join(BASE_DIR, n))), None)
     generate_devis_pdf(devis, output, logo_path=logo_r)
     return send_file(output, as_attachment=False, download_name=f"{devis['reference']}.pdf")
 
@@ -4114,7 +4115,7 @@ def _generate_bulletin_pdf(pid):
     
     # === HEADER WITH LOGO ===
     logo_path = None
-    for n in ['logo_ramya.png', 'logo_ramya_round.png']:
+    for n in ['logo_ramya.png', 'logo_wannygest.png']:
         lp = os.path.join(BASE_DIR, n)
         if os.path.exists(lp): logo_path = lp; break
     
@@ -4952,6 +4953,44 @@ def portail_dashboard():
     try:
         data['me'] = dict(conn.execute("SELECT * FROM client_users WHERE id=?", (session['client_user_id'],)).fetchone())
     except: data['me'] = {}
+    # === Alertes intervention (action requise + infos en temps réel) ===
+    alerts = []
+    try:
+        # Étape 4 : dates de livraison à confirmer
+        for r in conn.execute(
+            """SELECT id, title, delivery_proposed_date FROM interventions
+               WHERE client_id=? AND delivery_proposed_date IS NOT NULL
+               AND delivery_proposed_date != ''
+               AND COALESCE(delivery_client_status,'') IN ('','pending')
+               AND status != 'livre'""", (cid,)).fetchall():
+            alerts.append({'type':'action_required','icon':'📅',
+                'title':f"Date de livraison à confirmer — {r['title']}",
+                'message':f"Date proposée : {r['delivery_proposed_date']}. Validez ou proposez une alternative.",
+                'link':'/portail/interventions','color':'#e8672a','bg':'#fff3e0'})
+        # Étape 5 : livrées non notées
+        for r in conn.execute(
+            """SELECT id, title FROM interventions
+               WHERE client_id=? AND status='livre'
+               AND (rating_stars IS NULL OR rating_stars = 0)""", (cid,)).fetchall():
+            alerts.append({'type':'rating','icon':'⭐',
+                'title':f"Évaluez votre service — {r['title']}",
+                'message':"Votre chantier est livré. Donnez votre avis en 5 étoiles.",
+                'link':'/portail/interventions','color':'#ffb400','bg':'#fff8e1'})
+        # Travaux en cours
+        for r in conn.execute(
+            """SELECT id, title, status, technician_name FROM interventions
+               WHERE client_id=? AND status IN ('en_cours','travaux_termines','controle_qualite')
+               ORDER BY updated_at DESC LIMIT 3""", (cid,)).fetchall():
+            si = {'en_cours':('⚡','Travaux en cours','#1a7a6d','#e3f2fd'),
+                  'travaux_termines':('🏗️','Travaux terminés — en attente CQ','#1565c0','#e3f2fd'),
+                  'controle_qualite':('🔍','Contrôle qualité validé','#7b1fa2','#f3e5f5')}.get(
+                  r['status'],('🔧','En cours','#1a7a6d','#e3f2fd'))
+            alerts.append({'type':'info','icon':si[0],
+                'title':f"{si[1]} — {r['title']}",
+                'message':(f"Technicien : {r['technician_name']}" if r['technician_name'] else ""),
+                'link':'/portail/interventions','color':si[2],'bg':si[3]})
+    except Exception: pass
+    data['alerts'] = alerts
     conn.close()
     tmrw_s = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
     return render_template('extra_pages.html', page='portail_dashboard', data=data, today_str=today, tomorrow_str=tmrw_s)
@@ -4964,16 +5003,33 @@ def portail_profile():
     conn = _gdb()
     cuid = session['client_user_id']
     if request.method == 'POST':
-        # Handle photo upload
+        # Photo upload → base64 data URI (survives Render filesystem wipe)
         photo_file = request.files.get('photo')
-        photo_name = None
+        photo_data_uri = None
         if photo_file and photo_file.filename:
             ext = os.path.splitext(photo_file.filename)[1].lower()
             if ext in ('.jpg','.jpeg','.png','.webp'):
-                photo_name = f"client_{cuid}_{int(time.time())}{ext}"
-                fdir = os.path.join(app.config['UPLOAD_FOLDER'], 'client_photos')
-                os.makedirs(fdir, exist_ok=True)
-                photo_file.save(os.path.join(fdir, photo_name))
+                try:
+                    import base64, io
+                    from PIL import Image as _PIL
+                    raw = photo_file.read()
+                    img = _PIL.open(io.BytesIO(raw))
+                    if img.mode in ('RGBA','LA','P'):
+                        bg = _PIL.new('RGB', img.size, (255,255,255))
+                        if img.mode == 'RGBA':
+                            bg.paste(img, mask=img.split()[-1])
+                        else:
+                            bg.paste(img.convert('RGBA'), mask=img.convert('RGBA').split()[-1])
+                        img = bg
+                    elif img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    img.thumbnail((400, 400), _PIL.LANCZOS)
+                    buf = io.BytesIO()
+                    img.save(buf, format='JPEG', quality=80, optimize=True)
+                    b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+                    photo_data_uri = f"data:image/jpeg;base64,{b64}"
+                except Exception as e:
+                    flash(f"Erreur photo : {e}", "error")
         # Password change?
         new_pw = request.form.get('new_password', '').strip()
         old_pw = request.form.get('old_password', '').strip()
@@ -4990,7 +5046,6 @@ def portail_profile():
                 flash("❌ Ancien mot de passe incorrect", "error")
                 conn.close()
                 return redirect('/portail/profile')
-        # Update basic info
         updates = {
             'full_name': request.form.get('full_name','').strip(),
             'email': request.form.get('email','').strip(),
@@ -5000,17 +5055,17 @@ def portail_profile():
         sets = ", ".join(f"{k}=?" for k in updates)
         params = list(updates.values())
         try:
-            if photo_name:
+            if photo_data_uri:
                 sets += ", photo=?"
-                params.append(photo_name)
+                params.append(photo_data_uri)
             params.append(cuid)
             conn.execute(f"UPDATE client_users SET {sets} WHERE id=?", tuple(params))
             conn.commit()
             session['client_name'] = updates['full_name']
-        except Exception as e:
+        except Exception:
             conn.rollback()
         conn.close()
-        flash("✅ Profil mis à jour" + (" (mot de passe modifié)" if pw_changed else ""), "success")
+        flash("✅ Profil mis à jour" + (" (mot de passe modifié)" if pw_changed else "") + (" (photo enregistrée)" if photo_data_uri else ""), "success")
         return redirect('/portail/profile')
     # GET
     me = dict(conn.execute("SELECT * FROM client_users WHERE id=?", (cuid,)).fetchone() or {})
@@ -5744,6 +5799,128 @@ def intervention_deliver(iid):
     conn.commit(); conn.close()
     flash(f"Site livré — Bon de livraison {bon_ref}", "success")
     return redirect(request.referrer or f'/interventions/{iid}/fiche')
+
+
+@app.route('/interventions/<int:iid>/bon-livraison.pdf')
+@login_required
+def intervention_bon_livraison_pdf(iid):
+    """Génère et télécharge le PDF du bon de livraison."""
+    conn = _gdb()
+    inter = conn.execute(
+        """SELECT i.*, c.client_code as client_code_full,
+                  u.full_name as delivered_by_name
+           FROM interventions i
+           LEFT JOIN clients c ON i.client_id = c.id
+           LEFT JOIN users u ON i.delivered_by = u.id
+           WHERE i.id=?""", (iid,)).fetchone()
+    conn.close()
+    if not inter:
+        flash("Intervention introuvable", "error")
+        return redirect('/interventions')
+    inter = dict(inter)
+    if inter.get('status') != 'livre' or not inter.get('delivery_bon_ref'):
+        flash("Le bon de livraison n'est disponible qu'après livraison du chantier", "error")
+        return redirect(f'/interventions/{iid}/fiche')
+    inter.setdefault('client_code', inter.get('client_code_full'))
+    
+    from rapport_core import generate_bon_livraison_pdf
+    export_dir = os.path.join(BASE_DIR, 'exports')
+    os.makedirs(export_dir, exist_ok=True)
+    output = os.path.join(export_dir, f"BL-{inter['delivery_bon_ref']}.pdf")
+    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_wannygest.png"]
+                   if os.path.exists(os.path.join(BASE_DIR, n))), None)
+    generate_bon_livraison_pdf(inter, output, logo_path=logo_r)
+    return send_file(output, as_attachment=True,
+                     download_name=f"BonLivraison-{inter['delivery_bon_ref']}.pdf")
+
+
+@app.route('/interventions/<int:iid>/attestation.pdf')
+@login_required
+def intervention_attestation_pdf(iid):
+    """Génère et télécharge l'attestation de bonne exécution (à soumettre au client)."""
+    conn = _gdb()
+    inter = conn.execute(
+        """SELECT i.*, c.client_code as client_code_full
+           FROM interventions i
+           LEFT JOIN clients c ON i.client_id = c.id
+           WHERE i.id=?""", (iid,)).fetchone()
+    conn.close()
+    if not inter:
+        flash("Intervention introuvable", "error"); return redirect('/interventions')
+    inter = dict(inter)
+    if inter.get('status') != 'livre':
+        flash("L'attestation n'est disponible qu'après livraison du chantier", "error")
+        return redirect(f'/interventions/{iid}/fiche')
+    inter.setdefault('client_code', inter.get('client_code_full'))
+    
+    from rapport_core import generate_attestation_pdf
+    export_dir = os.path.join(BASE_DIR, 'exports')
+    os.makedirs(export_dir, exist_ok=True)
+    output = os.path.join(export_dir, f"Attestation-{inter.get('delivery_bon_ref') or inter['reference']}.pdf")
+    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_wannygest.png"]
+                   if os.path.exists(os.path.join(BASE_DIR, n))), None)
+    generate_attestation_pdf(inter, output, logo_path=logo_r)
+    return send_file(output, as_attachment=True,
+                     download_name=f"Attestation-{inter['reference']}.pdf")
+
+
+# ===== Portail client : téléchargement des documents de livraison =====
+@app.route('/portail/intervention/<int:iid>/bon-livraison.pdf')
+@portail_required
+def portail_bon_livraison(iid):
+    conn = _gdb()
+    inter = conn.execute(
+        """SELECT i.*, c.client_code as client_code_full,
+                  u.full_name as delivered_by_name
+           FROM interventions i
+           LEFT JOIN clients c ON i.client_id = c.id
+           LEFT JOIN users u ON i.delivered_by = u.id
+           WHERE i.id=? AND i.client_id=?""", (iid, session['client_id'])).fetchone()
+    conn.close()
+    if not inter:
+        flash("Intervention introuvable", "error"); return redirect('/portail/interventions')
+    inter = dict(inter)
+    if inter.get('status') != 'livre' or not inter.get('delivery_bon_ref'):
+        flash("Le bon de livraison n'est pas encore disponible", "error")
+        return redirect('/portail/interventions')
+    inter.setdefault('client_code', inter.get('client_code_full'))
+    from rapport_core import generate_bon_livraison_pdf
+    export_dir = os.path.join(BASE_DIR, 'exports')
+    os.makedirs(export_dir, exist_ok=True)
+    output = os.path.join(export_dir, f"BL-{inter['delivery_bon_ref']}.pdf")
+    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_wannygest.png"]
+                   if os.path.exists(os.path.join(BASE_DIR, n))), None)
+    generate_bon_livraison_pdf(inter, output, logo_path=logo_r)
+    return send_file(output, as_attachment=True,
+                     download_name=f"BonLivraison-{inter['delivery_bon_ref']}.pdf")
+
+
+@app.route('/portail/intervention/<int:iid>/attestation.pdf')
+@portail_required
+def portail_attestation(iid):
+    conn = _gdb()
+    inter = conn.execute(
+        """SELECT i.*, c.client_code as client_code_full
+           FROM interventions i
+           LEFT JOIN clients c ON i.client_id = c.id
+           WHERE i.id=? AND i.client_id=?""", (iid, session['client_id'])).fetchone()
+    conn.close()
+    if not inter:
+        flash("Intervention introuvable", "error"); return redirect('/portail/interventions')
+    inter = dict(inter)
+    if inter.get('status') != 'livre':
+        flash("L'attestation n'est pas encore disponible", "error")
+        return redirect('/portail/interventions')
+    inter.setdefault('client_code', inter.get('client_code_full'))
+    from rapport_core import generate_attestation_pdf
+    export_dir = os.path.join(BASE_DIR, 'exports')
+    os.makedirs(export_dir, exist_ok=True)
+    output = os.path.join(export_dir, f"Attestation-{inter.get('delivery_bon_ref') or inter['reference']}.pdf")
+    logo_r = next((os.path.join(BASE_DIR, n) for n in ["logo_ramya.png","logo_wannygest.png"]
+                   if os.path.exists(os.path.join(BASE_DIR, n))), None)
+    generate_attestation_pdf(inter, output, logo_path=logo_r)
+    return send_file(output, as_attachment=True,
+                     download_name=f"Attestation-{inter['reference']}.pdf")
 
 
 @app.route('/portail/intervention/<int:iid>/rate', methods=['POST'])
@@ -6655,12 +6832,47 @@ def resp_projet_dashboard():
         WHERE t.due_date <= ? AND t.status != 'termine' ORDER BY t.due_date""",
         (week_end,)).fetchall()]
     
+    # === RÉSUMÉ INTERVENTIONS WORKFLOW 5 ÉTAPES ===
+    interv_summary = {'counts': {}}
+    try:
+        interv_summary['to_check'] = [dict(r) for r in conn.execute(
+            """SELECT * FROM interventions WHERE status='travaux_termines' AND COALESCE(cq_status,'')=''
+               ORDER BY end_work_at DESC LIMIT 10""").fetchall()]
+        interv_summary['cq_done_no_date'] = [dict(r) for r in conn.execute(
+            """SELECT * FROM interventions WHERE cq_status='passed' AND status!='livre'
+               AND COALESCE(delivery_proposed_date,'')='' ORDER BY cq_at DESC LIMIT 10""").fetchall()]
+        interv_summary['waiting_client'] = [dict(r) for r in conn.execute(
+            """SELECT * FROM interventions WHERE COALESCE(delivery_proposed_date,'')!=''
+               AND COALESCE(delivery_client_status,'pending') IN ('','pending') AND status!='livre'
+               ORDER BY delivery_proposed_at DESC LIMIT 10""").fetchall()]
+        interv_summary['client_proposed'] = [dict(r) for r in conn.execute(
+            """SELECT * FROM interventions WHERE delivery_client_status='proposed' AND status!='livre'
+               ORDER BY delivery_client_answered_at DESC LIMIT 10""").fetchall()]
+        interv_summary['ready_deliver'] = [dict(r) for r in conn.execute(
+            """SELECT * FROM interventions WHERE delivery_client_status='accepted' AND status!='livre'
+               ORDER BY delivery_proposed_date LIMIT 10""").fetchall()]
+        month_start = datetime.now().strftime('%Y-%m-01')
+        interv_summary['delivered_month'] = [dict(r) for r in conn.execute(
+            """SELECT * FROM interventions WHERE status='livre' AND delivered_at >= ?
+               ORDER BY delivered_at DESC LIMIT 10""", (month_start,)).fetchall()]
+        interv_summary['counts'] = {
+            'to_check': len(interv_summary['to_check']),
+            'cq_done_no_date': len(interv_summary['cq_done_no_date']),
+            'waiting_client': len(interv_summary['waiting_client']),
+            'client_proposed': len(interv_summary['client_proposed']),
+            'ready_deliver': len(interv_summary['ready_deliver']),
+            'delivered_month': len(interv_summary['delivered_month']),
+        }
+    except Exception:
+        pass
+    
     conn.close()
     return render_template('resp_projet.html', page='resp_projet',
         projects=projects, total_p=total_p, en_cours=en_cours, termines=termines, en_retard=en_retard,
         tasks_total=tasks_total, tasks_done=tasks_done, tasks_pending=tasks_pending, tasks_progress=tasks_progress,
         budget_total=budget_total, budget_consumed=budget_consumed,
-        recent=recent, deadlines=deadlines, today=datetime.now().strftime('%Y-%m-%d'))
+        recent=recent, deadlines=deadlines, today=datetime.now().strftime('%Y-%m-%d'),
+        interv_summary=interv_summary)
 
 @app.route('/resp-projet/projets')
 @permission_required('resp_projet')

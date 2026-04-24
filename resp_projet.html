@@ -1,6 +1,81 @@
 {% extends "base.html" %}{% block title %}WannyGest - Responsable Projet{% endblock %}{% block content %}
-<div class="page-header"><h1>📁 Tableau de bord — Responsable Projet</h1>
-<a href="/resp-projet/projets" class="btn btn-primary btn-sm">+ Nouveau projet</a></div>
+<div class="page-header"><h1>📁 Tableau de bord — Responsable Projet / Coordinateur</h1>
+<div style="display:flex;gap:6px"><a href="/gestion-projets/controle-qualite" class="btn btn-outline btn-sm">🔍 Contrôle qualité</a>
+<a href="/gestion-projets/livraisons" class="btn btn-outline btn-sm">📦 Livraisons</a>
+<a href="/resp-projet/projets" class="btn btn-primary btn-sm">+ Nouveau projet</a></div></div>
+
+{% set counts = (interv_summary.counts if interv_summary else {}) or {} %}
+{% set total_action = (counts.to_check or 0) + (counts.cq_done_no_date or 0) + (counts.client_proposed or 0) + (counts.ready_deliver or 0) %}
+{% if total_action > 0 %}
+<div style="background:linear-gradient(135deg,#fff3e0,#ffe0b2);border:2px solid #e8672a;border-radius:12px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
+    <div style="font-size:28px">⚡</div>
+    <div style="flex:1">
+        <div style="font-weight:800;color:#c53030;font-size:14px">{{ total_action }} intervention(s) nécessitent votre attention</div>
+        <div style="font-size:11px;color:#666;margin-top:2px">Traitez-les rapidement pour respecter les délais clients</div>
+    </div>
+</div>
+{% endif %}
+
+<h3 style="font-size:14px;color:#1a3a5c;margin:14px 0 8px">🔧 Résumé des interventions en cours</h3>
+<div class="g4" style="margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+    <a href="/gestion-projets/controle-qualite" style="text-decoration:none;text-align:center;padding:14px;border-left:4px solid #1565c0;display:block;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+        <div style="font-size:11px;color:#888;margin-bottom:4px">Étape 2 — À contrôler</div>
+        <div style="font-size:26px;font-weight:800;color:#1565c0">{{ counts.to_check or 0 }}</div>
+        <div style="font-size:10px;color:#888">Travaux terminés, CQ en attente</div>
+    </a>
+    <a href="/gestion-projets/livraisons" style="text-decoration:none;text-align:center;padding:14px;border-left:4px solid #7b1fa2;display:block;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+        <div style="font-size:11px;color:#888;margin-bottom:4px">Étape 3 — Date à proposer</div>
+        <div style="font-size:26px;font-weight:800;color:#7b1fa2">{{ counts.cq_done_no_date or 0 }}</div>
+        <div style="font-size:10px;color:#888">CQ validé, sans date livraison</div>
+    </a>
+    <a href="/gestion-projets/livraisons" style="text-decoration:none;text-align:center;padding:14px;border-left:4px solid #e8672a;display:block;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+        <div style="font-size:11px;color:#888;margin-bottom:4px">Étape 4 — Client propose</div>
+        <div style="font-size:26px;font-weight:800;color:#e8672a">{{ counts.client_proposed or 0 }}</div>
+        <div style="font-size:10px;color:#888">À arbitrer avec client</div>
+    </a>
+    <a href="/gestion-projets/livraisons" style="text-decoration:none;text-align:center;padding:14px;border-left:4px solid #2e7d32;display:block;background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.04)">
+        <div style="font-size:11px;color:#888;margin-bottom:4px">Étape 5 — Prêt à livrer</div>
+        <div style="font-size:26px;font-weight:800;color:#2e7d32">{{ counts.ready_deliver or 0 }}</div>
+        <div style="font-size:10px;color:#888">Date client validée</div>
+    </a>
+</div>
+
+{% if interv_summary and interv_summary.to_check %}
+<div class="card" style="margin-bottom:14px"><div class="card-header"><h3 style="color:#1565c0">🔍 À contrôler maintenant ({{ interv_summary.to_check|length }})</h3>
+<a href="/gestion-projets/controle-qualite" style="font-size:11px;color:#1A7A6D;text-decoration:none">Voir tout →</a></div>
+<div class="card-body" style="padding:0">
+{% for i in interv_summary.to_check[:5] %}
+<div style="padding:10px 14px;border-bottom:1px solid #f0f0f0;display:flex;gap:10px;align-items:center">
+    <div style="flex:1">
+        <div style="font-size:13px;font-weight:700">{{ i.title }}</div>
+        <div style="font-size:11px;color:#888">🏢 {{ i.client_name or '-' }} · 🔧 {{ i.technician_name or '-' }}{% if i.end_work_at %} · ⏱️ Terminé {{ i.end_work_at[:10] }}{% endif %}</div>
+    </div>
+    <a href="/gestion-projets/controle-qualite" class="btn btn-primary btn-sm">Contrôler</a>
+</div>
+{% endfor %}
+</div></div>
+{% endif %}
+
+{% if interv_summary and interv_summary.ready_deliver %}
+<div class="card" style="margin-bottom:14px"><div class="card-header"><h3 style="color:#2e7d32">📦 Prêtes à livrer ({{ interv_summary.ready_deliver|length }})</h3>
+<a href="/gestion-projets/livraisons" style="font-size:11px;color:#1A7A6D;text-decoration:none">Voir tout →</a></div>
+<div class="card-body" style="padding:0">
+{% for i in interv_summary.ready_deliver[:5] %}
+<div style="padding:10px 14px;border-bottom:1px solid #f0f0f0;display:flex;gap:10px;align-items:center">
+    <div style="min-width:60px;text-align:center;padding:6px;background:#2e7d32;color:#fff;border-radius:6px;font-size:10px;font-weight:700;line-height:1.2">
+        {% if i.delivery_proposed_date %}{{ i.delivery_proposed_date[8:10] }}<br>{% set mo = ['','JAN','FEV','MAR','AVR','MAI','JUN','JUL','AOU','SEP','OCT','NOV','DEC'] %}{{ mo[i.delivery_proposed_date[5:7]|int] }}{% endif %}
+    </div>
+    <div style="flex:1">
+        <div style="font-size:13px;font-weight:700">{{ i.title }}</div>
+        <div style="font-size:11px;color:#888">🏢 {{ i.client_name or '-' }} · 📅 Livraison le {{ i.delivery_proposed_date }}</div>
+    </div>
+    <a href="/interventions/{{ i.id }}/fiche" class="btn btn-primary btn-sm">Livrer</a>
+</div>
+{% endfor %}
+</div></div>
+{% endif %}
+
+<h3 style="font-size:14px;color:#1a3a5c;margin:14px 0 8px">📁 Gestion des projets</h3>
 
 {% if en_retard > 0 %}
 <div style="background:#fde8e8;border:1px solid #ef9a9a;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:10px">

@@ -76,63 +76,41 @@
 <!-- Permissions -->
 <div class="card">
     <div class="card-header"><h3>🔑 Permissions par rôle</h3>
-        <span style="font-size:11px;color:#888">👁️ = Consultation · ✏️ = Modification</span>
+        <span style="font-size:11px;color:#888">Cochez pour accorder · Admin a tous les droits</span>
     </div>
     <div class="card-body">
         <form method="post" action="/admin/permissions">
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th style="min-width:180px">Module</th>
-                    {% for role in ['admin','dg','rh','technicien','commercial','comptable','moyens_generaux','informatique','resp_projet','concierge','proprietaire','secretaire'] %}
-                    <th style="font-size:10px;text-align:center;writing-mode:vertical-lr;transform:rotate(180deg);height:80px">{{ role }}</th>
+                    <thead><tr><th style="min-width:240px;background:#1a3a5c;color:#fff">Permission</th>
+                    {% for role in ['admin','dg','rh','technicien','commercial','comptable','moyens_generaux','informatique','resp_projet','coordinateur','concierge','secretaire'] %}
+                    <th style="font-size:10px;text-align:center;writing-mode:vertical-lr;transform:rotate(180deg);height:80px;background:#1a3a5c;color:#fff">{{ role }}</th>
                     {% endfor %}</tr></thead>
                     <tbody>
-                    {% set perm_groups = [
-                        ('📊 Tableau de bord', 'dashboard', none),
-                        ('📊 Tableau de bord général', 'dashboard_general', none),
-                        ('📝 Rapports journaliers', 'rapports_j', none),
-                        ('💬 Chat', 'chat', none),
-                        ('⏱️ Gestion du temps / DPCI', 'traitement', none),
-                        ('📂 Fichiers / Rapports / RH', 'fichiers', none),
-                        ('📧 Envoi email paie', 'envoyer', none),
-                        ('📋 Logs d\'activité', 'logs', none),
-                        ('📄 Contrats', 'contrats', none),
-                        ('👥 Clients — Lecture', 'clients', none),
-                        ('👥 Clients — Modification', 'clients_edit', 'clients'),
-                        ('📝 Devis — Lecture', 'proforma', none),
-                        ('📝 Devis — Modification', 'proforma_edit', 'proforma'),
-                        ('🔄 Convertir devis en facture', 'convertir_devis', none),
-                        ('📋 Visites — Lecture', 'visites', none),
-                        ('📋 Visites — Modification', 'visites_edit', 'visites'),
-                        ('💰 Comptabilité — Lecture', 'comptabilite', none),
-                        ('💰 Comptabilité — Modification', 'comptabilite_edit', 'comptabilite'),
-                        ('💵 Caisse (entrées/sorties)', 'caisse_sortie', none),
-                        ('🏠 Stock — Lecture', 'moyens_generaux', none),
-                        ('🏠 Stock — Modification', 'moyens_generaux_edit', 'moyens_generaux'),
-                        ('🏗️ Centre technique — Lecture', 'centre_technique', none),
-                        ('🏗️ Centre technique — Modification', 'centre_technique_edit', 'centre_technique'),
-                        ('📁 Resp. projet — Lecture', 'resp_projet', none),
-                        ('📁 Resp. projet — Modification', 'resp_projet_edit', 'resp_projet'),
-                        ('🔑 Conciergerie — Consultation', 'concierge', none),
-                        ('🔑 Conciergerie — Modification', 'concierge_edit', 'concierge'),
-                        ('💻 Informatique', 'informatique', none),
-                        ('📁 Projets info', 'projets', none),
-                        ('📡 Tracking GPS', 'tracking', none),
-                        ('⚙️ Administration', 'admin', none),
-                    ] %}
-                    {% for label, perm, parent in perm_groups %}
-                    <tr style="{% if '_edit' in perm or 'Modification' in label %}background:#fef9e7{% endif %}">
-                        <td style="font-size:12px">{% if 'Modification' in label %}   <span style="color:#e8672a">✏️</span>{% elif 'Consultation' in label %}<span style="color:#1a7a6d">👁️</span>{% endif %} {{ label }}</td>
-                        {% for role in ['admin','dg','rh','technicien','commercial','comptable','moyens_generaux','informatique','resp_projet','concierge','proprietaire','secretaire'] %}
-                        <td style="text-align:center"><input type="checkbox" name="{{ role }}_{{ perm }}" {% if perm in role_perms.get(role, []) %}checked{% endif %} {% if role == 'admin' %}disabled checked{% endif %} style="width:16px;height:16px"></td>
+                    {% for category, perms in perm_categories.items() %}
+                        <tr style="background:#f0f7f7;font-weight:700">
+                            <td colspan="13" style="padding:8px 10px;font-size:13px;color:#1a7a6d;border-top:2px solid #1a7a6d">{{ category }}</td>
+                        </tr>
+                        {% for perm, label in perms %}
+                        <tr style="{% if '_edit' in perm or 'Modification' in label or 'Valider' in label %}background:#fef9e7{% endif %}">
+                            <td style="font-size:12px;padding:6px 10px">
+                                {% if 'Modification' in label or 'Valider' in label %}<span style="color:#e8672a">✏️</span>
+                                {% elif 'lecture' in label|lower or 'Consultation' in label %}<span style="color:#1a7a6d">👁️</span>
+                                {% endif %}
+                                {{ label }}
+                                <span style="font-size:10px;color:#aaa;margin-left:6px;font-family:monospace">{{ perm }}</span>
+                            </td>
+                            {% for role in ['admin','dg','rh','technicien','commercial','comptable','moyens_generaux','informatique','resp_projet','coordinateur','concierge','secretaire'] %}
+                            <td style="text-align:center"><input type="checkbox" name="{{ role }}_{{ perm }}" {% if perm in role_perms.get(role, []) %}checked{% endif %} {% if role == 'admin' %}disabled checked{% endif %} style="width:16px;height:16px"></td>
+                            {% endfor %}
+                        </tr>
                         {% endfor %}
-                    </tr>
                     {% endfor %}
                     </tbody>
                 </table>
             </div>
-            <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center">
-                <span style="font-size:11px;color:#888">💡 Les lignes jaunes ✏️ contrôlent la création/modification. Sans ✏️, l'utilisateur ne peut que consulter.</span>
+            <div style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                <span style="font-size:11px;color:#888">💡 Lignes jaunes ✏️ = création/modification. Sans ✏️, l'utilisateur ne peut que consulter.</span>
                 <button type="submit" class="btn btn-primary">💾 Sauvegarder les permissions</button>
             </div>
         </form>

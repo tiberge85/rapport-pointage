@@ -54,8 +54,8 @@
                 {{ st|replace('_',' ')|replace('sous','sous ')|capitalize }}</span></td>
                 <td style="white-space:nowrap">
                     <a href="/clients/{{ c.id }}" class="btn btn-sm btn-outline" style="font-size:9px" title="Voir">👁️</a>
-                    <a href="/clients/edit/{{ c.id }}" class="btn btn-sm btn-outline" style="font-size:9px" title="Modifier">✏️</a>
-                    <a href="/clients/delete/{{ c.id }}" class="btn btn-sm" style="color:#c53030;font-size:9px" onclick="return confirm('Supprimer ce client ?')" title="Supprimer">🗑️</a>
+                    <a href="/clients/edit/{{ c.id }}?return_to={{ (request.url | urlencode) if request.url else '' }}" class="btn btn-sm btn-outline" style="font-size:9px" title="Modifier">✏️</a>
+                    <a href="/clients/delete/{{ c.id }}?return_to={{ (request.url | urlencode) if request.url else '' }}" class="btn btn-sm del-client-btn" data-name="{{ c.name|e }}" style="color:#c53030;font-size:9px" title="Supprimer">🗑️</a>
                 </td>
             </tr>
             {% endfor %}
@@ -102,8 +102,15 @@
             if (count === 0) { alert('Aucun client sélectionné'); return false; }
             return confirm('⚠️ Supprimer définitivement ' + count + ' client(s) ? Les factures/devis associés seront conservés mais détachés.');
         }
-        // ===== Pagination + search =====
+        // ===== Pagination + search avec persistance URL hash =====
         var cliCurrentPage=1, cliPerPage=25;
+        (function(){
+            var m = (window.location.hash || '').match(/p=(\d+)/);
+            if(m) cliCurrentPage = parseInt(m[1]) || 1;
+        })();
+        function cliPersistPage(){
+            try { history.replaceState(null, '', window.location.pathname + '#p=' + cliCurrentPage); } catch(e) {}
+        }
         function cliPaginate(){
             var rows=document.querySelectorAll('.cli-row');
             var visible=[]; rows.forEach(function(r){if(!r.dataset.hidden) visible.push(r)});
@@ -112,9 +119,30 @@
             rows.forEach(function(r){r.style.display='none'});
             visible.forEach(function(r,i){r.style.display=(i>=(cliCurrentPage-1)*cliPerPage&&i<cliCurrentPage*cliPerPage)?'':'none'});
             document.getElementById('cliPageInfo').textContent='Page '+cliCurrentPage+' / '+pages+' ('+total+' clients)';
+            cliPersistPage();
             updateSel();
         }
         function cliPage(dir){cliCurrentPage+=dir;cliPaginate()}
+        function confirmDelClient(link, name){
+            if(!confirm('⚠️ Supprimer « ' + name + ' » ? Les factures/devis associés seront conservés mais détachés.')) return false;
+            try {
+                var url = new URL(link.href);
+                var rt = url.searchParams.get('return_to');
+                if(rt) {
+                    var full = rt + (rt.indexOf('#') >= 0 ? '' : '#p=' + cliCurrentPage);
+                    url.searchParams.set('return_to', full);
+                    link.href = url.toString();
+                }
+            } catch(e) {}
+            return true;
+        }
+        document.addEventListener('DOMContentLoaded', function(){
+            document.querySelectorAll('.del-client-btn').forEach(function(a){
+                a.addEventListener('click', function(e){
+                    if(!confirmDelClient(a, a.dataset.name || 'ce client')) e.preventDefault();
+                });
+            });
+        });
         function searchClients(){
             var f=document.getElementById('searchCli').value.toLowerCase();
             document.querySelectorAll('.cli-row').forEach(function(r){

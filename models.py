@@ -206,6 +206,7 @@ def init_db():
         'informatique': ['dashboard', 'informatique', 'traitement', 'visites', 'projets', 'rapports_j', 'centre_technique', 'chat', 'gps_itineraire'],
         'resp_projet': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'rapports_j', 'proforma', 'chat', 'gps_itineraire', 'client_requests_view'],
         'gestionnaire_projet': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'clients_edit', 'rapports_j', 'proforma', 'proforma_edit', 'visites', 'centre_technique', 'chat', 'gps_itineraire'],
+        'coordinateur': ['dashboard', 'resp_projet', 'resp_projet_edit', 'clients', 'rapports_j', 'chat', 'gps_itineraire', 'client_requests_view', 'controle_qualite', 'livraison_intervention'],
     }
     for role, perms in default_perms.items():
         for perm in perms:
@@ -375,10 +376,26 @@ def update_client(client_id, **kwargs):
 
 
 def delete_client(client_id):
+    """Supprime un client en délinkant d'abord toutes les références FK."""
     conn = get_db()
-    conn.execute("DELETE FROM clients WHERE id = ?", (client_id,))
-    conn.commit()
-    conn.close()
+    try:
+        tables_to_unlink = [
+            'devis', 'invoices', 'contrats', 'interventions',
+            'visits', 'tech_center', 'client_messages', 'client_requests',
+            'client_users', 'client_attachments', 'client_reminders',
+            'treasury', 'caisse_sorties', 'caisse_entrees', 'bilans', 'prospects'
+        ]
+        for tbl in tables_to_unlink:
+            try: conn.execute(f"UPDATE {tbl} SET client_id = NULL WHERE client_id = ?", (client_id,))
+            except: pass
+        conn.execute("DELETE FROM clients WHERE id = ?", (client_id,))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
 
 
 # ======================== JOB OPERATIONS ========================

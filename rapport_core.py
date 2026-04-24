@@ -2459,3 +2459,299 @@ def generate_devis_pdf(devis_data, output_path, logo_path=None):
     
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
     return output_path
+
+
+# =============================================================================
+# BON DE LIVRAISON — Document officiel remis au client en fin de chantier
+# =============================================================================
+
+def generate_bon_livraison_pdf(inter_data, output_path, logo_path=None):
+    """Génère un bon de livraison PDF signé par coordinateur + client + technicien.
+    
+    inter_data dict must include:
+      - delivery_bon_ref, reference (intervention ref), title, client_name, site_address
+      - delivered_at, delivery_proposed_date
+      - delivery_signed_client, delivery_signed_coordinator, delivery_signed_technicien
+      - technician_name, delivered_by_name (coordinator), client_code
+    """
+    from reportlab.platypus import Image as RLImage
+    from reportlab.lib.colors import HexColor
+    import base64, io, os
+    
+    RAMYA_TEAL = HexColor('#1A7A6D')
+    RAMYA_ORANGE = HexColor('#F29F2F')
+    
+    doc = SimpleDocTemplate(output_path, pagesize=A4,
+        leftMargin=15*mm, rightMargin=15*mm, topMargin=15*mm, bottomMargin=25*mm)
+    story = []
+    
+    # HEADER
+    logo_el = Paragraph("", ParagraphStyle('empty', fontSize=1))
+    if logo_path and os.path.exists(logo_path):
+        try:
+            try:
+                from PIL import Image as _PIL
+                with _PIL.open(logo_path) as _im:
+                    ratio = _im.width / _im.height
+            except: ratio = 0.76
+            logo_w = 20*mm; logo_h = logo_w / ratio
+            logo_el = RLImage(logo_path, width=logo_w, height=logo_h)
+        except: pass
+    
+    company = Paragraph("<b>RAMYA</b><br/><b>TECHNOLOGIE &amp; INNOVATION</b>",
+        ParagraphStyle('co', fontSize=11, fontName='Helvetica-Bold',
+                       textColor=RAMYA_TEAL, leading=14, alignment=TA_CENTER))
+    
+    title_right = Paragraph(
+        f"<font size='22' color='#1A7A6D'><b>BON DE LIVRAISON</b></font><br/>"
+        f"<font size='10'>N° <b>{inter_data.get('delivery_bon_ref','-')}</b></font><br/>"
+        f"<font size='9'>Intervention : {inter_data.get('reference','-')}</font><br/>"
+        f"<font size='9'>Date : {inter_data.get('delivered_at','')[:10]}</font>",
+        ParagraphStyle('tr', alignment=TA_RIGHT, leading=14))
+    
+    ht = Table([[logo_el, company, title_right]], colWidths=[28*mm, 57*mm, 95*mm])
+    ht.setStyle(TableStyle([
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('BACKGROUND',(0,0),(0,0), white),
+        ('LEFTPADDING',(0,0),(-1,-1),4),
+        ('RIGHTPADDING',(0,0),(-1,-1),4),
+    ]))
+    story.append(ht)
+    story.append(Spacer(1, 6*mm))
+    
+    # CLIENT INFO
+    client_block = Paragraph(
+        f"<b>REMIS À :</b><br/>"
+        f"<b>{inter_data.get('client_name','-')}</b>"
+        f"{' (Code : ' + inter_data.get('client_code','') + ')' if inter_data.get('client_code') else ''}<br/>"
+        f"{'Site : ' + inter_data.get('site_address','') if inter_data.get('site_address') else ''}",
+        ParagraphStyle('cl', fontSize=11, leading=16))
+    story.append(client_block)
+    story.append(Spacer(1, 4*mm))
+    
+    # OBJET
+    objet_para = Paragraph(
+        f"<b>OBJET DE LA LIVRAISON :</b><br/>{inter_data.get('title','-')}",
+        ParagraphStyle('obj', fontSize=11, leading=15))
+    story.append(objet_para)
+    story.append(Spacer(1, 4*mm))
+    
+    # DETAILS TABLE
+    details = [
+        ["Date de livraison", inter_data.get('delivery_proposed_date') or inter_data.get('delivered_at','')[:10]],
+        ["Heure d'exécution", inter_data.get('delivered_at','')[11:16] if inter_data.get('delivered_at') else '-'],
+        ["Type d'intervention", inter_data.get('type','-').capitalize()],
+        ["Livré par (coordinateur)", inter_data.get('delivered_by_name','-')],
+        ["Technicien responsable", inter_data.get('technician_name','-')],
+    ]
+    dt = Table(details, colWidths=[60*mm, 120*mm])
+    dt.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(0,-1), HexColor('#f0f7f7')),
+        ('TEXTCOLOR',(0,0),(0,-1), RAMYA_TEAL),
+        ('FONTNAME',(0,0),(0,-1), 'Helvetica-Bold'),
+        ('FONTSIZE',(0,0),(-1,-1), 10),
+        ('GRID',(0,0),(-1,-1), 0.5, HexColor('#dddddd')),
+        ('VALIGN',(0,0),(-1,-1), 'MIDDLE'),
+        ('LEFTPADDING',(0,0),(-1,-1), 8),
+        ('TOPPADDING',(0,0),(-1,-1), 6),
+        ('BOTTOMPADDING',(0,0),(-1,-1), 6),
+    ]))
+    story.append(dt)
+    story.append(Spacer(1, 6*mm))
+    
+    # NOTE CLIENT
+    note_para = Paragraph(
+        "<b>CONDITIONS DE LIVRAISON :</b><br/>"
+        "Le client reconnaît avoir reçu la prestation décrite ci-dessus dans son intégralité, "
+        "et déclare en avoir vérifié la conformité avec le cahier des charges et les fonctionnalités convenues. "
+        "Toute réserve doit être consignée ci-dessous.",
+        ParagraphStyle('nt', fontSize=9, leading=12, textColor=HexColor('#444')))
+    story.append(note_para)
+    story.append(Spacer(1, 4*mm))
+    
+    # OBSERVATIONS
+    obs_box = Table([["Observations / Réserves éventuelles :", ""]], colWidths=[180*mm, 0*mm], rowHeights=[24*mm])
+    obs_box.setStyle(TableStyle([
+        ('BOX',(0,0),(-1,-1), 1, HexColor('#999999')),
+        ('VALIGN',(0,0),(-1,-1), 'TOP'),
+        ('LEFTPADDING',(0,0),(-1,-1), 8),
+        ('TOPPADDING',(0,0),(-1,-1), 6),
+        ('FONTSIZE',(0,0),(-1,-1), 9),
+    ]))
+    story.append(obs_box)
+    story.append(Spacer(1, 6*mm))
+    
+    # ===== SIGNATURES (3 blocs côte-à-côte) =====
+    def sig_cell(title, subtitle, sig_data):
+        img_el = Paragraph("<font size='9' color='#888'><i>(signature)</i></font>",
+            ParagraphStyle('s', fontSize=9, alignment=TA_CENTER, textColor=HexColor('#999')))
+        if sig_data and sig_data.startswith('data:image'):
+            try:
+                b64 = sig_data.split(',',1)[1]
+                raw = base64.b64decode(b64)
+                img_el = RLImage(io.BytesIO(raw), width=50*mm, height=18*mm, kind='proportional')
+            except: pass
+        return [
+            Paragraph(f"<b>{title}</b>", ParagraphStyle('t',fontSize=9,alignment=TA_CENTER, textColor=RAMYA_TEAL)),
+            Paragraph(f"<font size='8' color='#666'>{subtitle}</font>",
+                ParagraphStyle('s',fontSize=8,alignment=TA_CENTER)),
+            Spacer(1, 2*mm),
+            img_el,
+        ]
+    
+    sig_data = [[
+        sig_cell("Le Client", inter_data.get('client_name','')[:28], inter_data.get('delivery_signed_client')),
+        sig_cell("Le Coordinateur", inter_data.get('delivered_by_name',''), inter_data.get('delivery_signed_coordinator')),
+        sig_cell("Le Responsable Technique", inter_data.get('technician_name',''), inter_data.get('delivery_signed_technicien')),
+    ]]
+    st = Table(sig_data, colWidths=[60*mm, 60*mm, 60*mm])
+    st.setStyle(TableStyle([
+        ('VALIGN',(0,0),(-1,-1), 'TOP'),
+        ('BOX',(0,0),(-1,-1), 0.5, HexColor('#cccccc')),
+        ('INNERGRID',(0,0),(-1,-1), 0.5, HexColor('#eeeeee')),
+        ('TOPPADDING',(0,0),(-1,-1), 8),
+        ('BOTTOMPADDING',(0,0),(-1,-1), 8),
+        ('LEFTPADDING',(0,0),(-1,-1), 4),
+        ('RIGHTPADDING',(0,0),(-1,-1), 4),
+    ]))
+    story.append(st)
+    story.append(Spacer(1, 4*mm))
+    
+    # Footer
+    def _footer(canv, doc_):
+        canv.saveState()
+        canv.setFont('Helvetica-Bold', 7)
+        canv.setFillColor(RAMYA_TEAL)
+        w, _ = A4
+        lines = [
+            "Siège social ABIDJAN Cocody ABATTA derrière la station OLA ENERGY / N°RCCM : CI-ABJ-2017-A-25092 / NCC : 1746141.B",
+            "Compte bancaire : Orabank N° : 033201001901 / Bdu N° : 20401160186 / Cel : + 225 2722204498 / 07 09 50 02 43 / 07 47 68 20 27",
+            "Email: dg@ramyaci.tech - admin@ramyaci.tech - www.ramyatechnologie.com",
+        ]
+        y = 15*mm
+        for ln in lines:
+            canv.drawCentredString(w/2, y, ln); y -= 3.5*mm
+        canv.restoreState()
+    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    return output_path
+
+
+# =============================================================================
+# ATTESTATION DE BONNE EXÉCUTION — Soumise au client pour signature
+# =============================================================================
+
+def generate_attestation_pdf(inter_data, output_path, logo_path=None):
+    """Attestation de bonne exécution des travaux, pour signature client après livraison.
+    """
+    from reportlab.platypus import Image as RLImage
+    from reportlab.lib.colors import HexColor
+    import base64, io, os
+    from datetime import datetime
+    
+    RAMYA_TEAL = HexColor('#1A7A6D')
+    
+    doc = SimpleDocTemplate(output_path, pagesize=A4,
+        leftMargin=18*mm, rightMargin=18*mm, topMargin=18*mm, bottomMargin=30*mm)
+    story = []
+    
+    # HEADER
+    logo_el = Paragraph("", ParagraphStyle('empty', fontSize=1))
+    if logo_path and os.path.exists(logo_path):
+        try:
+            try:
+                from PIL import Image as _PIL
+                with _PIL.open(logo_path) as _im:
+                    ratio = _im.width / _im.height
+            except: ratio = 0.76
+            logo_w = 22*mm; logo_h = logo_w / ratio
+            logo_el = RLImage(logo_path, width=logo_w, height=logo_h)
+        except: pass
+    
+    company = Paragraph("<b>RAMYA</b><br/><b>TECHNOLOGIE &amp; INNOVATION</b>",
+        ParagraphStyle('co', fontSize=11, fontName='Helvetica-Bold',
+                       textColor=RAMYA_TEAL, leading=14, alignment=TA_CENTER))
+    
+    ht = Table([[logo_el, company, ""]], colWidths=[28*mm, 60*mm, 86*mm])
+    ht.setStyle(TableStyle([
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('BACKGROUND',(0,0),(0,0), white),
+        ('LEFTPADDING',(0,0),(-1,-1),4),
+    ]))
+    story.append(ht)
+    story.append(Spacer(1, 10*mm))
+    
+    # Title
+    title = Paragraph(
+        "<para alignment='center'><font size='22' color='#1A7A6D'><b>ATTESTATION DE BONNE EXÉCUTION</b></font></para>",
+        ParagraphStyle('t', alignment=TA_CENTER, leading=28))
+    story.append(title)
+    story.append(Spacer(1, 4*mm))
+    
+    ref_line = Paragraph(
+        f"<para alignment='center'><font size='10' color='#666'>"
+        f"Référence intervention : <b>{inter_data.get('reference','-')}</b>"
+        f"{' · Bon de livraison : ' + inter_data.get('delivery_bon_ref','') if inter_data.get('delivery_bon_ref') else ''}"
+        f"</font></para>",
+        ParagraphStyle('rl', alignment=TA_CENTER))
+    story.append(ref_line)
+    story.append(Spacer(1, 10*mm))
+    
+    # Body
+    body_text = (
+        f"Je soussigné(e), <b>___________________________________________</b>, "
+        f"représentant légal de la société <b>{inter_data.get('client_name','-')}</b>"
+        f"{' (Code client : ' + inter_data.get('client_code','') + ')' if inter_data.get('client_code') else ''}"
+        f", atteste par la présente que la société <b>RAMYA TECHNOLOGIE &amp; INNOVATION</b> "
+        f"a exécuté avec <b>satisfaction</b> les prestations suivantes :<br/><br/>"
+        f"<b>Objet des travaux :</b> {inter_data.get('title','-')}<br/>"
+        f"<b>Site d'intervention :</b> {inter_data.get('site_address') or '-'}<br/>"
+        f"<b>Date de livraison :</b> {inter_data.get('delivery_proposed_date') or (inter_data.get('delivered_at','')[:10])}<br/><br/>"
+        f"Les travaux ont été réalisés conformément au cahier des charges convenu, "
+        f"dans les délais impartis et selon les règles de l'art. "
+        f"Cette attestation est délivrée à RAMYA TECHNOLOGIE &amp; INNOVATION pour servir et valoir ce que de droit."
+    )
+    body = Paragraph(body_text, ParagraphStyle('body', fontSize=11, leading=18, alignment=TA_LEFT))
+    story.append(body)
+    story.append(Spacer(1, 14*mm))
+    
+    # Date + place
+    place_date = Paragraph(
+        f"Fait à ______________________, le ______________________",
+        ParagraphStyle('pd', fontSize=11, leading=16))
+    story.append(place_date)
+    story.append(Spacer(1, 16*mm))
+    
+    # Signature zone client (grand cadre pour signature manuscrite)
+    sig_title = Paragraph(
+        "<para alignment='right'><b>Signature du client</b><br/><font size='8' color='#888'>(Nom, qualité, cachet)</font></para>",
+        ParagraphStyle('st', alignment=TA_RIGHT, fontSize=11))
+    story.append(sig_title)
+    story.append(Spacer(1, 2*mm))
+    
+    sig_box = Table([[""]], colWidths=[90*mm], rowHeights=[35*mm])
+    sig_box.setStyle(TableStyle([
+        ('BOX',(0,0),(-1,-1), 0.8, HexColor('#666666')),
+        ('BACKGROUND',(0,0),(-1,-1), HexColor('#fafafa')),
+    ]))
+    # Place signature box on the right
+    sig_wrap = Table([['', sig_box]], colWidths=[84*mm, 90*mm])
+    sig_wrap.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP')]))
+    story.append(sig_wrap)
+    
+    # Footer
+    def _footer(canv, doc_):
+        canv.saveState()
+        canv.setFont('Helvetica-Bold', 7)
+        canv.setFillColor(RAMYA_TEAL)
+        w, _ = A4
+        lines = [
+            "Siège social ABIDJAN Cocody ABATTA derrière la station OLA ENERGY / N°RCCM : CI-ABJ-2017-A-25092 / NCC : 1746141.B",
+            "Compte bancaire : Orabank N° : 033201001901 / Bdu N° : 20401160186 / Cel : + 225 2722204498 / 07 09 50 02 43 / 07 47 68 20 27",
+            "Email: dg@ramyaci.tech - admin@ramyaci.tech - www.ramyatechnologie.com",
+        ]
+        y = 15*mm
+        for ln in lines:
+            canv.drawCentredString(w/2, y, ln); y -= 3.5*mm
+        canv.restoreState()
+    doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
+    return output_path
