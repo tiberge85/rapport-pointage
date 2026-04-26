@@ -247,7 +247,7 @@
                     <a href="/resp-projet/projets" class="{% if page == 'resp_projets' %}active{% endif %}">📁 Projets</a>
                     <a href="/kanban" class="{% if page == 'kanban' %}active{% endif %}">📋 Tâches (Kanban)</a>
                     <a href="/resp-projet/planning" class="{% if page == 'resp_planning' %}active{% endif %}">📅 Planning</a>
-                    <a href="/interventions" class="{% if page == 'interventions' %}active{% endif %}">🔧 Interventions</a>
+                    <a href="/interventions" class="{% if page == 'interventions' %}active{% endif %}" style="position:relative">🔧 Interventions{% if new_interventions_count and new_interventions_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ new_interventions_count }}</span>{% endif %}</a>
                     {% if 'controle_qualite' in permissions or 'admin' in permissions %}
                     <a href="/gestion-projets/controle-qualite" class="{% if page == 'controle_qualite' %}active{% endif %}">🔍 Contrôle qualité{% if pending_cq_count and pending_cq_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ pending_cq_count }}</span>{% endif %}</a>
                     {% endif %}
@@ -328,7 +328,7 @@
             <div class="nav-section" id="sec-tech">
                 <div class="nav-section-title" onclick="toggleSection('sec-tech')">🔧 CENTRE TECHNIQUE <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
-                    <a href="/interventions/tech" class="{% if page == 'interventions_tech' %}active{% endif %}">🔧 Mes interventions</a>
+                    <a href="/interventions/tech" class="{% if page == 'interventions_tech' %}active{% endif %}" style="position:relative">🔧 Mes interventions{% if my_interventions_count and my_interventions_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ my_interventions_count }}</span>{% endif %}</a>
                     <a href="/interventions/programme" class="{% if page == 'programme_jour' %}active{% endif %}">📋 Programme du jour</a>
                     <a href="/visites" class="{% if page == 'visites' %}active{% endif %}">📋 Rapports de visite</a>
                     <a href="/centre-technique" class="{% if page == 'tech_center' %}active{% endif %}">🏗️ Équipements clients</a>
@@ -389,7 +389,7 @@
                 <div class="nav-section-title" onclick="toggleSection('sec-admin')">⚙️ ADMINISTRATION <span class="arrow">▼</span></div>
                 <div class="nav-section-items">
                     <a href="/admin" class="{% if page == 'admin' %}active{% endif %}">Utilisateurs & rôles</a>
-                    <a href="/admin/client-requests" class="{% if page == 'client_requests' %}active{% endif %}">📩 Demandes clients</a>
+                    <a href="/admin/client-requests" class="{% if page == 'client_requests' %}active{% endif %}" style="position:relative">📩 Demandes clients{% if pending_requests_count and pending_requests_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ pending_requests_count }}</span>{% endif %}</a>
                     <a href="/admin/client-users" class="{% if page == 'client_users' %}active{% endif %}">👤 Portail clients</a>
                     <a href="/admin/client-users/pending" class="{% if page == 'client_users_pending' %}active{% endif %}" style="position:relative">⏳ Comptes à valider{% if pending_clients_count and pending_clients_count > 0 %} <span style="background:#e8672a;color:#fff;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;margin-left:4px">{{ pending_clients_count }}</span>{% endif %}</a>
                     <a href="/admin/modules" class="{% if page == 'admin_modules' %}active{% endif %}">⚙️ Modules</a>

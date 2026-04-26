@@ -1271,6 +1271,12 @@ Total toutes caisses : <span style="color:#1A7A6D">{{ '{:,.0f}'.format(total) }}
 </div></div></div>
 
 {% elif page == 'portail_dashboard' %}
+{% if data.active_interventions_count and data.active_interventions_count > 0 %}
+<!-- Auto-actualisation toutes les 60s tant qu'une intervention est en cours -->
+<script>
+setTimeout(function(){ window.location.reload(); }, 60000);
+</script>
+{% endif %}
 <style>
 .portail-hero { background:linear-gradient(135deg,#1A7A6D 0%,#0d5b50 100%); color:#fff; padding:20px 22px; margin:-20px -20px 20px; border-radius:0 0 18px 18px; box-shadow:0 4px 14px rgba(26,122,109,0.2); }
 .portail-hero .hero-row { display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; }
@@ -1352,7 +1358,7 @@ Total toutes caisses : <span style="color:#1A7A6D">{{ '{:,.0f}'.format(total) }}
 <div class="portail-quick-actions">
     <a href="/portail/demande" class="qa" style="border-color:#e8672a;color:#e8672a"><span class="ic">📩</span><span class="lbl">Nouvelle demande</span></a>
     <a href="/portail/planning" class="qa" style="border-color:#1A7A6D;color:#1A7A6D"><span class="ic">📅</span><span class="lbl">Mon planning{% if data.planning_count %}<span class="badge-n">{{ data.planning_count }}</span>{% endif %}</span></a>
-    <a href="/portail/interventions" class="qa"><span class="ic">🔧</span><span class="lbl">Interventions</span></a>
+    <a href="/portail/interventions" class="qa" style="{% if data.active_interventions_count and data.active_interventions_count > 0 %}border-color:#1565c0;color:#1565c0{% endif %}"><span class="ic">🔧</span><span class="lbl">Interventions{% if data.active_interventions_count and data.active_interventions_count > 0 %} <span style="background:#e8672a;color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;margin-left:4px">{{ data.active_interventions_count }}</span>{% endif %}</span></a>
     <a href="/portail/factures" class="qa"><span class="ic">🧾</span><span class="lbl">Factures</span></a>
     <a href="/portail/profile" class="qa"><span class="ic">👤</span><span class="lbl">Mon profil</span></a>
 </div>
@@ -1859,28 +1865,49 @@ document.querySelectorAll('.star-rate').forEach(function(el){
         </div>
     </div>
     
-    <!-- Form CQ (hidden by default) -->
+    <!-- Form CQ (hidden by default) — décision via 2 boutons explicites -->
     <form method="post" action="/interventions/{{ i.id }}/quality" id="cq{{ i.id }}" enctype="multipart/form-data"
           style="display:none;margin-top:10px;padding:12px;background:#f0f7f7;border-radius:8px">
-        <div class="form-group"><label style="font-weight:700">Décision</label>
-            <div style="display:flex;gap:14px">
-                <label style="display:flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="cq_status" value="passed" checked> <span style="color:#2e7d32;font-weight:700">✅ Validé</span></label>
-                <label style="display:flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="cq_status" value="failed"> <span style="color:#c53030;font-weight:700">❌ Refusé (retour tech)</span></label>
-            </div>
-        </div>
-        <div class="form-group"><label>Observations *</label>
-            <textarea name="quality_report" rows="3" required placeholder="État du site, finitions, points à signaler..." style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px;font-size:12px"></textarea>
+        <input type="hidden" name="cq_status" id="cq{{ i.id }}_status" value="">
+        <div class="form-group"><label style="font-weight:700">Observations / Notes du coordinateur <span id="cq{{ i.id }}_required_label" style="color:#c53030;display:none">(motif obligatoire si refusé)</span></label>
+            <textarea name="quality_report" id="cq{{ i.id }}_report" rows="3" placeholder="État du site, finitions, points à signaler..." style="width:100%;padding:8px;border:1.5px solid #ddd;border-radius:6px;font-size:12px"></textarea>
         </div>
         <div class="form-group"><label>📸 Photos (optionnel)</label>
             <input type="file" name="photos" accept="image/*" multiple capture="environment" style="padding:6px;border:1.5px dashed #ccc;border-radius:6px;width:100%">
         </div>
-        <div style="display:flex;gap:6px;justify-content:flex-end">
+        <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
             <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('cq{{ i.id }}').style.display='none'">Annuler</button>
-            <button type="submit" class="btn btn-primary btn-sm">💾 Enregistrer le CQ</button>
+            <div style="display:flex;gap:8px">
+                <button type="button" class="btn btn-sm" style="background:#fde8e8;color:#c53030;font-weight:700;border:1.5px solid #c53030" onclick="cqSubmit('{{ i.id }}','failed')">❌ Refuser (retour technicien)</button>
+                <button type="button" class="btn btn-sm" style="background:#2e7d32;color:#fff;font-weight:700" onclick="cqSubmit('{{ i.id }}','passed')">✅ Valider le contrôle qualité</button>
+            </div>
         </div>
     </form>
 </div></div>
 {% endfor %}
+<script>
+function cqSubmit(iid, decision) {
+    var form = document.getElementById('cq' + iid);
+    var statusInput = document.getElementById('cq' + iid + '_status');
+    var report = document.getElementById('cq' + iid + '_report');
+    statusInput.value = decision;
+    if (decision === 'failed') {
+        if (!report.value || report.value.trim().length < 5) {
+            alert('⚠️ Le motif du refus est obligatoire (min. 5 caractères) afin que le technicien puisse corriger.');
+            report.focus();
+            return false;
+        }
+        if (!confirm('Refuser le contrôle qualité ?\n\nMotif : ' + report.value.substring(0, 200) + '\n\nLe technicien sera notifié et devra reprendre les travaux.')) {
+            return false;
+        }
+    } else {
+        if (!confirm('Valider le contrôle qualité ?\n\nL\'intervention passera à l\'étape suivante (proposition de date de livraison).')) {
+            return false;
+        }
+    }
+    form.submit();
+}
+</script>
 {% else %}
 <div class="card"><div class="card-body" style="text-align:center;padding:30px;color:#999">
     <div style="font-size:36px;margin-bottom:6px">✅</div>
@@ -1897,8 +1924,8 @@ document.querySelectorAll('.star-rate').forEach(function(el){
 <td><code>{{ i.reference }}</code></td>
 <td>{{ i.client_name or i.client_name_full }}</td>
 <td>{{ i.title[:40] }}</td>
-<td><span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;{% if i.cq_status == 'passed' %}background:#e8f5e9;color:#2e7d32{% else %}background:#fde8e8;color:#c53030{% endif %}">
-    {% if i.cq_status == 'passed' %}✅ Validé{% else %}❌ Refusé{% endif %}
+<td><span style="padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;{% if i.cq_status == 'passed' %}background:#e8f5e9;color:#2e7d32{% elif i.cq_status == 'failed' %}background:#fde8e8;color:#c53030{% else %}background:#f0f0f0;color:#888{% endif %}">
+    {% if i.cq_status == 'passed' %}✅ Validé{% elif i.cq_status == 'failed' %}❌ Refusé{% else %}⏳ Non contrôlé{% endif %}
 </span></td>
 <td>{{ i.cq_by_name or '-' }}</td>
 <td style="font-size:11px;color:#888">{{ i.cq_at[:16] if i.cq_at else '-' }}</td>

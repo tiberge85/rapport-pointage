@@ -3175,3 +3175,14 @@ def migrate_v49():
             try: conn.execute("INSERT OR IGNORE INTO permissions (role, permission) VALUES (?, ?)", (role, perm))
             except: pass
     conn.commit(); conn.close()
+
+
+def migrate_v50():
+    """v50 : Ajouter updated_at sur interventions (pour le suivi temps réel des rapports clients)."""
+    conn = get_db()
+    try: conn.execute("ALTER TABLE interventions ADD COLUMN updated_at TEXT")
+    except: pass
+    # Initialiser updated_at = created_at pour les enregistrements existants
+    try: conn.execute("UPDATE interventions SET updated_at = COALESCE(updated_at, created_at, scheduled_date) WHERE updated_at IS NULL OR updated_at = ''")
+    except: pass
+    conn.commit(); conn.close()

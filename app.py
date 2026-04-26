@@ -283,6 +283,8 @@ from models import migrate_v48
 migrate_v48()
 from models import migrate_v49
 migrate_v49()
+from models import migrate_v50
+migrate_v50()
 from models import migrate_v15
 migrate_v15()
 from models import migrate_v16
@@ -483,6 +485,29 @@ def inject_globals():
                             (delivery_client_status='accepted' AND status!='livre') OR
                             (delivery_client_status='proposed')""").fetchone()[0]
                     except: ctx['pending_deliv_count'] = 0
+                    # Demandes clients à traiter (statut soumise)
+                    try:
+                        ctx['pending_requests_count'] = _c.execute(
+                            "SELECT COUNT(*) FROM client_requests WHERE status='soumise'").fetchone()[0]
+                    except: ctx['pending_requests_count'] = 0
+                    # Nouvelles interventions assignées (depuis dernière visite de la liste)
+                    try:
+                        last_seen = session.get('last_interventions_seen', '1970-01-01')
+                        ctx['new_interventions_count'] = _c.execute(
+                            """SELECT COUNT(*) FROM interventions
+                               WHERE COALESCE(created_at, scheduled_date, '') > ?
+                               AND status NOT IN ('livre','annule')""", (last_seen,)).fetchone()[0]
+                    except: ctx['new_interventions_count'] = 0
+                    # Nouvelles interventions du technicien connecté
+                    try:
+                        last_seen_t = session.get('last_my_interventions_seen', '1970-01-01')
+                        u_id = session.get('user_id', 0)
+                        ctx['my_interventions_count'] = _c.execute(
+                            """SELECT COUNT(*) FROM interventions
+                               WHERE technician_id=?
+                               AND COALESCE(created_at, scheduled_date, '') > ?
+                               AND status NOT IN ('livre','annule')""", (u_id, last_seen_t)).fetchone()[0]
+                    except: ctx['my_interventions_count'] = 0
                     _c.close()
                 except: pass
             # Weekly champion
@@ -5142,6 +5167,24 @@ def portail_dashboard():
                 'link':'/portail/interventions','color':si[2],'bg':si[3]})
     except Exception: pass
     data['alerts'] = alerts
+    # Compteur d'interventions actives (pour le badge sur le quick-action)
+    try:
+        data['active_interventions_count'] = conn.execute(
+            """SELECT COUNT(*) FROM interventions WHERE client_id=?
+               AND status IN ('planifiee','en_cours','travaux_termines','controle_qualite')""",
+            (cid,)).fetchone()[0]
+    except Exception:
+        data['active_interventions_count'] = 0
+    # Compteur de rapports/messages non lus (interventions modifiées depuis dernière visite)
+    try:
+        last_visit = session.get('last_portail_interv_seen', '1970-01-01')
+        data['new_progress_count'] = conn.execute(
+            """SELECT COUNT(*) FROM interventions WHERE client_id=?
+               AND COALESCE(updated_at, scheduled_date, '') > ?
+               AND status IN ('en_cours','travaux_termines','controle_qualite','livre')""",
+            (cid, last_visit)).fetchone()[0]
+    except Exception:
+        data['new_progress_count'] = 0
     conn.close()
     tmrw_s = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
     return render_template('extra_pages.html', page='portail_dashboard', data=data, today_str=today, tomorrow_str=tmrw_s)
@@ -5792,47 +5835,80 @@ def intervention_quality(iid):
                 f.save(os.path.join(fdir, fname))
                 img_names.append(fname)
     
-    cq_status = request.form.get('cq_status', 'passed')  # passed | failed
-    cq_comments = request.form.get('quality_report', '')
+    # Validation stricte du statut : doit être exactement 'passed' ou 'failed'
+    raw_status = (request.form.get('cq_status', '') or '').strip().lower()
+    if raw_status not in ('passed', 'failed'):
+        flash("❌ Décision CQ invalide. Veuillez cliquer sur le bouton Valider ou Refuser.", "error")
+        conn.close()
+        return redirect(request.referrer or f'/interventions/{iid}/fiche')
+    
+    cq_status = raw_status
+    cq_comments = (request.form.get('quality_report', '') or '').strip()
+    
+    # Si refus : motif obligatoire (min 5 caractères)
+    if cq_status == 'failed' and len(cq_comments) < 5:
+        flash("❌ Pour refuser un contrôle qualité, vous devez fournir un motif clair (min. 5 caractères) afin que le technicien puisse corriger.", "error")
+        conn.close()
+        return redirect(request.referrer or f'/interventions/{iid}/fiche')
+    
     user = get_user_by_id(session['user_id'])
     actor_name = user['full_name'] if user else '?'
     actor_role = user['role'] if user else ''
     now_iso = datetime.now().isoformat()
     
+    new_status = 'controle_qualite' if cq_status == 'passed' else 'en_cours'
+    
     conn.execute("""UPDATE interventions SET 
         quality_report=?, quality_date=?, quality_by=?,
         cq_status=?, cq_at=?, cq_by=?, cq_by_name=?, cq_comments=?, cq_photos=?,
-        status=? WHERE id=?""",
+        status=?, updated_at=? WHERE id=?""",
         (cq_comments + ('\n📸 ' + ','.join(img_names) if img_names else ''),
          datetime.now().strftime('%Y-%m-%d'), session['user_id'],
          cq_status, now_iso, session['user_id'], actor_name, cq_comments, json.dumps(img_names),
-         'controle_qualite' if cq_status == 'passed' else 'en_cours',  # si CQ failed, retour à en_cours
-         iid))
-    
-    _timeline_add(conn, iid, 'cq', f"🔍 Contrôle qualité : {cq_status.upper()}",
-        cq_comments[:200], session['user_id'], actor_name, actor_role)
+         new_status, now_iso, iid))
     
     if cq_status == 'passed':
+        _timeline_add(conn, iid, 'cq', f"🔍 Contrôle qualité VALIDÉ ✅",
+            cq_comments[:200] or "Travaux conformes", session['user_id'], actor_name, actor_role)
         _notify_client(conn, iid, f"🔍 Contrôle qualité validé — {inter['reference']}",
             f"Le contrôle qualité de « {inter['title']} » est validé. Nous allons vous proposer une date de livraison.")
-        # Notifier techs pour info
         if inter.get('technician_id'):
             conn.execute("""INSERT INTO notifications (user_id, type, title, message, link)
                 VALUES (?,?,?,?,?)""",
                 (inter['technician_id'], 'intervention', f"✅ CQ validé — {inter['reference']}",
                  f"Le coordinateur a validé le contrôle qualité. Prochaine étape : proposition de date de livraison.",
                  f"/interventions/{iid}/fiche"))
+        flash(f"✅ Contrôle qualité validé pour {inter['reference']} — l'intervention passe à l'étape suivante (date de livraison)", "success")
     else:
-        # CQ failed → retour au technicien
+        # CQ refusé : motif obligatoire déjà validé
+        _timeline_add(conn, iid, 'cq_failed', f"❌ Contrôle qualité REFUSÉ",
+            f"Motif : {cq_comments[:200]}", session['user_id'], actor_name, actor_role)
+        # Notifier technicien avec motif détaillé
         if inter.get('technician_id'):
             conn.execute("""INSERT INTO notifications (user_id, type, title, message, link)
                 VALUES (?,?,?,?,?)""",
-                (inter['technician_id'], 'intervention', f"⚠️ CQ refusé — reprise nécessaire — {inter['reference']}",
-                 f"Le coordinateur a refusé le contrôle qualité. Motif : {cq_comments[:100]}",
+                (inter['technician_id'], 'intervention',
+                 f"⚠️ CQ REFUSÉ — Reprise nécessaire — {inter['reference']}",
+                 f"Le coordinateur ({actor_name}) a refusé le contrôle qualité.\n\n"
+                 f"📋 Motif : {cq_comments}\n\n"
+                 f"➡️ Merci d'apporter les corrections puis de marquer à nouveau les travaux terminés pour un nouveau CQ.",
                  f"/interventions/{iid}/fiche"))
+        # Notifier admin/dg pour info
+        try:
+            for u in conn.execute("SELECT id FROM users WHERE role IN ('admin','dg') AND is_active=1").fetchall():
+                conn.execute("""INSERT INTO notifications (user_id, type, title, message, link)
+                    VALUES (?,?,?,?,?)""",
+                    (u['id'], 'intervention',
+                     f"⚠️ CQ refusé — {inter['reference']}",
+                     f"{actor_name} a refusé le CQ. Motif : {cq_comments[:100]}. Le technicien {inter.get('technician_name','-')} doit reprendre.",
+                     f"/interventions/{iid}/fiche"))
+        except: pass
+        # Notifier le client : son chantier est en correction
+        _notify_client(conn, iid, f"🔧 Correction en cours — {inter['reference']}",
+            f"Suite au contrôle qualité de « {inter['title'] }», nous procédons à des corrections pour vous garantir la meilleure qualité. Nous vous tiendrons informé.")
+        flash(f"⚠️ Contrôle qualité refusé pour {inter['reference']} — le technicien a été notifié avec le motif et reprendra les travaux", "warning")
     
     conn.commit(); conn.close()
-    flash(f"Contrôle qualité {'validé ✅' if cq_status=='passed' else 'refusé ❌ — intervention remise en cours'}", "success" if cq_status == 'passed' else "warning")
     return redirect(request.referrer or f'/interventions/{iid}/fiche')
 
 
@@ -6513,6 +6589,8 @@ def interventions_list():
     clients = [dict(r) for r in conn.execute("SELECT id, name FROM clients ORDER BY name").fetchall()]
     technicians = [dict(r) for r in conn.execute("SELECT id, full_name FROM users WHERE role IN ('technicien','admin') ORDER BY full_name").fetchall()]
     conn.close()
+    # Marquer les interventions comme "vues" pour réinitialiser le badge
+    session['last_interventions_seen'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     return render_template('extra_pages.html', page='interventions', interventions=interventions,
                           projects=projects, clients=clients, technicians=technicians)
 
@@ -6529,6 +6607,7 @@ def interventions_tech():
             "SELECT * FROM interventions WHERE technician_id=? OR created_by=? ORDER BY scheduled_date DESC",
             (session['user_id'], session['user_id'])).fetchall()]
     conn.close()
+    session['last_my_interventions_seen'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     return render_template('extra_pages.html', page='interventions_tech', interventions=interventions, is_admin=is_admin)
 
 @app.route('/interventions/add', methods=['POST'])

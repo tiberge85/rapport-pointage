@@ -9,8 +9,11 @@ _chart_donut.png
 .env
 venv/
 .DS_Store
+<<<<<<< HEAD
 .DS_Store
 .DS_Store
 .DS_Store
 .DS_Store
 .DS_Store
+=======
+>>>>>>> b38ec4a (Mise à jour WannyGest v12 + correction)
