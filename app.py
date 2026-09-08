@@ -1918,9 +1918,12 @@ try:
                 'refus_at TEXT', 'comptabilise_par TEXT']:
         try: _v116m.execute(f"ALTER TABLE caisse_sorties ADD COLUMN {col}")
         except: pass
+    for col in ['montant_paye REAL DEFAULT 0', 'reste REAL DEFAULT 0', 'paiement_partiel INTEGER DEFAULT 0']:
+        try: _v116m.execute(f"ALTER TABLE caisse_sorties ADD COLUMN {col}")
+        except: pass
     _v116m.commit()
     _v116m.close()
-    print("[v116-Cols] Colonnes refus_motif/refus_par/comptabilise_par OK", flush=True)
+    print("[v116-Cols] Colonnes refus_motif/refus_par/comptabilise_par/montant_paye/reste OK", flush=True)
 except Exception as _e:
     print(f"[v116-Cols] Erreur : {_e}", flush=True)
 
@@ -13914,6 +13917,32 @@ def api_notif_count():
                         (uid, 'rappel', f"{prefix}{time_str} — {ev['title']}",
                          f"{ev.get('description','') or ev['title']}", "/rh/calendrier"))
         
+        # === Rappels de recharge Internet → visibles dans les notifications (compta + IT + direction) ===
+        try:
+            _rech_alerts = get_recharge_alerts()
+        except Exception:
+            _rech_alerts = []
+        if _rech_alerts:
+            _rech_targets = [row['id'] for row in conn.execute(
+                "SELECT id FROM users WHERE is_active=1 AND role IN "
+                "('admin','dg','directeur','rh','comptable','comptabilite','tresorerie','finance','informaticien','informatique','it')").fetchall()]
+            for ra in _rech_alerts:
+                _lien = "/it/recharge?focus=%s" % ra.get('id')
+                if conn.execute("SELECT id FROM notifications WHERE type='recharge' AND link=? AND created_at > datetime('now','-1 day')",
+                                (_lien,)).fetchone():
+                    continue
+                _dl = ra.get('days_left', 0)
+                if ra.get('is_overdue'):
+                    _titre = "🔴 Recharge en retard — %s" % (ra.get('equipment_name') or 'équipement')
+                    _msg = "%s (%s) : échéance dépassée de %d jour(s). Montant %s F" % (
+                        ra.get('equipment_name') or '', ra.get('operator') or '', abs(int(_dl)), '{:,.0f}'.format(float(ra.get('amount') or 0)))
+                else:
+                    _titre = "🟠 Recharge à prévoir — %s" % (ra.get('equipment_name') or 'équipement')
+                    _msg = "%s (%s) : échéance %s (dans %d j). Montant %s F" % (
+                        ra.get('equipment_name') or '', ra.get('operator') or '', (ra.get('next_due') or '')[:10], int(_dl), '{:,.0f}'.format(float(ra.get('amount') or 0)))
+                for _uid in _rech_targets:
+                    conn.execute("INSERT INTO notifications (user_id, type, title, message, link) VALUES (?,?,?,?,?)",
+                                 (_uid, 'recharge', _titre, _msg, _lien))
         conn.commit()
         # === Count unread ===
         cnt = conn.execute("SELECT COUNT(*) FROM notifications WHERE (user_id=? OR employee_id IN (SELECT id FROM employees WHERE email=?)) AND read=0",
@@ -35589,83 +35618,133 @@ def caisse_decision(sid):
     return redirect(url_for('caisse_sortie'))
 
 
-@app.route('/caisse-sortie/<int:sid>/comptabiliser')
+@app.route('/caisse-sortie/<int:sid>/comptabiliser', methods=['GET', 'POST'])
 @login_required
 def caisse_comptabiliser(sid):
     from models import get_db
     """La comptabilité (ou DG/RH en secours) enregistre le décaissement.
     v114 : Sync automatique au journal de caisse + déduction du solde.
-    v116 : DG/RH peut décaisser à la place du comptable si celui-ci est absent."""
-    # v116 : contrôle d'accès — comptable OU DG/RH/admin
+    v116 : DG/RH peut décaisser à la place du comptable si celui-ci est absent.
+    v174 : Paiement TOTAL ou PARTIEL — trace montant versé / reste à payer."""
     user = get_user_by_id(session['user_id'])
     if not user or user['role'] not in ('admin', 'comptable', 'comptabilite', 'tresorerie', 'dg', 'directeur', 'rh'):
         flash("⚠️ Seuls le comptable, le DG, le directeur, la RH ou l'admin peuvent décaisser une sortie", "error")
         return redirect(url_for('caisse_sortie'))
-    
+
     conn = get_db()
-    conn.execute("UPDATE caisse_sorties SET comptabilise=1, comptabilise_at=?, comptabilise_par=? WHERE id=? AND status='valide'",
-                 (datetime.now().isoformat(), user['full_name'], sid))
     s = conn.execute("SELECT * FROM caisse_sorties WHERE id=?", (sid,)).fetchone()
-    if s:
-        s = dict(s)
-        # Ajouter dans la trésorerie
-        try:
-            conn.execute("INSERT INTO treasury (type, amount, description, category, created_by, created_at) VALUES (?,?,?,?,?,?)",
-                         ('depense', s['montant'], f"Sortie caisse {s['reference']} — {s['beneficiaire']} — {s['motif']}",
-                          'sortie_caisse', session.get('user_id'), datetime.now().isoformat()))
-        except: pass
-        # v114 : Forcer la caisse de fonctionnement si caisse_id absent
-        cid = s.get('caisse_id') or get_caisse_fonctionnement_id()
-        if cid:
-            # Idempotence : vérifier si déjà comptabilisé (anti-double déduction)
-            already_op = conn.execute(
-                "SELECT id FROM caisse_operations WHERE reference=? AND caisse_id=? AND type='sortie'",
-                (s['reference'], cid)).fetchone()
-            if not already_op:
-                try:
-                    conn.execute("""INSERT INTO caisse_operations (caisse_id, type, amount, description, reference, category, created_by)
-                        VALUES (?,?,?,?,?,?,?)""",
-                        (cid, 'sortie', s['montant'],
-                         f"Sortie {s['reference']} — {s['beneficiaire']}",
-                         s['reference'], 'sortie_caisse', session.get('user_id')))
-                    conn.execute("UPDATE caisses SET solde_actuel = COALESCE(solde_actuel,0) - ? WHERE id=?", (s['montant'], cid))
-                except Exception as _e:
-                    print(f"[v114] Erreur op caisse : {_e}", flush=True)
-            # v114 : SYNC AU JOURNAL DE CAISSE (sortie)
+    if not s:
+        conn.close(); flash("Sortie introuvable", "error"); return redirect(url_for('caisse_sortie'))
+    s = dict(s)
+    if s.get('status') != 'valide':
+        conn.close(); flash("⚠️ Cette sortie doit d'abord être validée (signature DG/RH).", "error"); return redirect(url_for('caisse_sortie'))
+
+    total = float(s.get('montant') or 0)
+    paid_before = float(s.get('montant_paye') or 0)
+    reste_avant = max(0.0, total - paid_before)
+    if reste_avant <= 0.001:
+        conn.close(); flash("Cette sortie est déjà intégralement décaissée.", "success"); return redirect(url_for('caisse_sortie'))
+
+    # Mode de paiement : total (défaut) ou partiel avec un montant
+    mode = (request.form.get('paiement_mode') or '').strip().lower()
+    montant_in = None
+    _raw = (request.form.get('montant') or '').replace(' ', '').replace(' ', '').replace(',', '.')
+    if _raw:
+        try: montant_in = float(_raw)
+        except Exception: montant_in = None
+    if mode == 'partiel' and montant_in and montant_in > 0:
+        amt = min(montant_in, reste_avant)
+    else:
+        amt = reste_avant  # paiement total du reste
+    if amt <= 0:
+        conn.close(); flash("Montant à décaisser invalide.", "error"); return redirect(url_for('caisse_sortie'))
+
+    new_paid = paid_before + amt
+    new_reste = max(0.0, round(total - new_paid, 2))
+    is_full = new_reste <= 0.001
+
+    # Référence d'opération unique par versement (évite le blocage d'idempotence sur les partiels)
+    try:
+        pcount = conn.execute("SELECT COUNT(*) FROM caisse_operations WHERE reference LIKE ? AND type='sortie'", (s['reference'] + '%',)).fetchone()[0]
+    except Exception:
+        pcount = 0
+    op_ref = s['reference'] if (is_full and paid_before <= 0.001) else (s['reference'] + '/P' + str(int(pcount) + 1))
+    suffix = '' if is_full else ' (partiel)'
+
+    # MAJ de la sortie : montant payé / reste ; comptabilisé seulement si soldé
+    if is_full:
+        conn.execute("UPDATE caisse_sorties SET comptabilise=1, comptabilise_at=?, comptabilise_par=?, montant_paye=?, reste=?, paiement_partiel=0 WHERE id=?",
+                     (datetime.now().isoformat(), user['full_name'], new_paid, 0, sid))
+    else:
+        conn.execute("UPDATE caisse_sorties SET comptabilise=0, comptabilise_par=?, montant_paye=?, reste=?, paiement_partiel=1 WHERE id=?",
+                     (user['full_name'], new_paid, new_reste, sid))
+
+    # Trésorerie (montant versé maintenant)
+    try:
+        conn.execute("INSERT INTO treasury (type, amount, description, category, created_by, created_at) VALUES (?,?,?,?,?,?)",
+                     ('depense', amt, f"Sortie caisse {op_ref} — {s['beneficiaire']} — {s.get('motif','')}{suffix}",
+                      'sortie_caisse', session.get('user_id'), datetime.now().isoformat()))
+    except: pass
+    cid = s.get('caisse_id') or get_caisse_fonctionnement_id()
+    if cid:
+        already_op = conn.execute(
+            "SELECT id FROM caisse_operations WHERE reference=? AND caisse_id=? AND type='sortie'",
+            (op_ref, cid)).fetchone()
+        if not already_op:
             try:
-                _sync_caisse_op_to_journal(conn, 'sortie',
-                    s.get('date') or datetime.now().strftime('%Y-%m-%d'),
-                    s['montant'],
-                    f"Sortie {s['reference']} — {s['beneficiaire']} — {s.get('motif','')}",
-                    s['reference'], session.get('user_id'), caisse_id=cid)
+                conn.execute("""INSERT INTO caisse_operations (caisse_id, type, amount, description, reference, category, created_by)
+                    VALUES (?,?,?,?,?,?,?)""",
+                    (cid, 'sortie', amt,
+                     f"Sortie {op_ref} — {s['beneficiaire']}{suffix}",
+                     op_ref, 'sortie_caisse', session.get('user_id')))
+                conn.execute("UPDATE caisses SET solde_actuel = COALESCE(solde_actuel,0) - ? WHERE id=?", (amt, cid))
             except Exception as _e:
-                print(f"[v114] Erreur sync journal : {_e}", flush=True)
-        # Écriture comptable partie double : 658 (charges diverses) DÉBIT / 571 (caisse) CRÉDIT
+                print(f"[v114] Erreur op caisse : {_e}", flush=True)
         try:
-            auto_ecriture(conn, s.get('date') or datetime.now().strftime('%Y-%m-%d'),
-                f"Sortie {s['reference']} — {s['beneficiaire']}", '658', '571', s['montant'], s['reference'])
-        except: pass
-        # v117 : Auto-injection dans la table depenses (suivi unifié)
-        try:
-            existing_dep = conn.execute(
-                "SELECT id FROM depenses WHERE source_type='caisse_sortie' AND source_reference=?",
-                (s['reference'],)).fetchone()
-            if not existing_dep:
-                conn.execute("""INSERT INTO depenses 
-                    (reference, date, category, amount, description, beneficiaire,
-                     source_type, source_id, source_reference, caisse_id,
-                     status, created_by, created_by_name)
-                    VALUES (?,?,?,?,?,?,'caisse_sortie',?,?,?,'comptabilisee',?,?)""",
-                    (f"DEP-{s['reference']}", s.get('date') or datetime.now().strftime('%Y-%m-%d'),
-                     'sortie_caisse', s['montant'],
-                     s.get('motif','') or '', s.get('beneficiaire','') or '',
-                     s['id'], s['reference'], cid,
-                     session.get('user_id'), user['full_name']))
+            _sync_caisse_op_to_journal(conn, 'sortie',
+                s.get('date') or datetime.now().strftime('%Y-%m-%d'), amt,
+                f"Sortie {op_ref} — {s['beneficiaire']} — {s.get('motif','')}{suffix}",
+                op_ref, session.get('user_id'), caisse_id=cid)
         except Exception as _e:
-            print(f"[v117-Dep] Erreur sync dépense : {_e}", flush=True)
+            print(f"[v114] Erreur sync journal : {_e}", flush=True)
+    # Écriture comptable partie double : 658 DÉBIT / 571 CRÉDIT
+    try:
+        auto_ecriture(conn, s.get('date') or datetime.now().strftime('%Y-%m-%d'),
+            f"Sortie {op_ref} — {s['beneficiaire']}{suffix}", '658', '571', amt, op_ref)
+    except: pass
+    # Auto-injection dans la table depenses (par versement)
+    try:
+        existing_dep = conn.execute(
+            "SELECT id FROM depenses WHERE source_type='caisse_sortie' AND source_reference=?",
+            (op_ref,)).fetchone()
+        if not existing_dep:
+            conn.execute("""INSERT INTO depenses
+                (reference, date, category, amount, description, beneficiaire,
+                 source_type, source_id, source_reference, caisse_id,
+                 status, created_by, created_by_name)
+                VALUES (?,?,?,?,?,?,'caisse_sortie',?,?,?,'comptabilisee',?,?)""",
+                (f"DEP-{op_ref}", s.get('date') or datetime.now().strftime('%Y-%m-%d'),
+                 'sortie_caisse', amt,
+                 (s.get('motif','') or '') + suffix, s.get('beneficiaire','') or '',
+                 s['id'], op_ref, cid,
+                 session.get('user_id'), user['full_name']))
+    except Exception as _e:
+        print(f"[v117-Dep] Erreur sync dépense : {_e}", flush=True)
+
+    # Notifier le demandeur en cas de paiement partiel (reste à verser)
+    if not is_full and s.get('demandeur_id'):
+        try:
+            notify_user(s['demandeur_id'], f"💵 Paiement partiel — {s['reference']}",
+                        f"Versé : {amt:,.0f} F. Reste à payer : {new_reste:,.0f} F sur {total:,.0f} F.",
+                        link="/caisse-sortie", type='caisse_partiel', priority='high')
+        except Exception: pass
+
     conn.commit(); conn.close()
     label = 'comptable' if user['role'] in ('comptable','comptabilite','tresorerie') else ('DG' if user['role'] in ('dg','directeur') else ('RH' if user['role']=='rh' else 'Admin'))
-    flash(f"✅ Décaissement effectué par {label} ({user['full_name']}) — solde caisse mis à jour + journal de caisse + écriture comptable", "success")
+    if is_full:
+        flash(f"✅ Décaissement TOTAL effectué par {label} ({user['full_name']}) — {new_paid:,.0f} F. Solde caisse, journal et écriture mis à jour.", "success")
+    else:
+        flash(f"🟠 Paiement PARTIEL enregistré par {label} : {amt:,.0f} F versés — RESTE À PAYER {new_reste:,.0f} F sur {total:,.0f} F. La sortie reste ouverte jusqu'au solde.", "success")
     return redirect(url_for('caisse_sortie'))
 
 

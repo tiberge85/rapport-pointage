@@ -165,18 +165,42 @@
                     {% else %}— Action de la Comptabilité
                     {% endif %}
                 </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                    <a href="/caisse-sortie/{{ s.id }}/comptabiliser" class="btn btn-primary" 
-                        style="background:#1A7A6D;color:#fff;padding:10px 20px;font-size:13px;font-weight:700"
-                        onclick="return confirm('⚠️ Procéder au décaissement de {{ s.montant }} F au bénéficiaire {{ s.beneficiaire }} ?\n\nCette action mettra à jour le solde de caisse et enregistrera l\\'écriture comptable 658 / 571.');">
-                        💰 Procéder au décaissement
-                    </a>
-                    <button type="button" class="btn" style="background:#c53030;color:#fff;padding:10px 16px;font-size:13px;font-weight:700"
-                        onclick="document.getElementById('compta_refus_form').style.display='block';this.style.display='none'">
-                        ❌ Refuser
-                    </button>
+                {% set _paye = s.montant_paye or 0 %}
+                {% set _reste = (s.montant or 0) - _paye %}
+                {% if _paye > 0 %}
+                <div style="margin-bottom:10px;padding:8px 10px;background:#fff3e0;border:1px solid #f0c987;border-radius:6px;font-size:12px;color:#7a4a00">
+                    🟠 <strong>Paiement partiel en cours</strong> — Déjà versé : <strong>{{ '{:,.0f}'.format(_paye) }} F</strong> ·
+                    Reste à payer : <strong style="color:#c53030">{{ '{:,.0f}'.format(_reste) }} F</strong> sur {{ '{:,.0f}'.format(s.montant or 0) }} F
                 </div>
-                <div style="font-size:11px;color:#666;margin-top:6px">L'écriture comptable partie double sera générée automatiquement (658 charges / 571 caisse)</div>
+                {% endif %}
+                <form method="post" action="/caisse-sortie/{{ s.id }}/comptabiliser" id="decForm"
+                      onsubmit="return confirm('Confirmer le décaissement ?');">
+                    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+                        <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer">
+                            <input type="radio" name="paiement_mode" value="total" checked onclick="document.getElementById('decMontantWrap').style.display='none'">
+                            Paiement <strong>total</strong> ({{ '{:,.0f}'.format(_reste) }} F)
+                        </label>
+                        <label style="font-size:13px;display:flex;align-items:center;gap:5px;cursor:pointer">
+                            <input type="radio" name="paiement_mode" value="partiel" onclick="document.getElementById('decMontantWrap').style.display='flex'">
+                            Paiement <strong>partiel</strong>
+                        </label>
+                        <div id="decMontantWrap" style="display:none;align-items:center;gap:6px">
+                            <input type="number" name="montant" step="1" min="1" max="{{ _reste|int }}" placeholder="Montant versé (F)"
+                                style="width:150px;padding:8px;border:1.5px solid #f0a04b;border-radius:6px;font-size:13px">
+                            <span style="font-size:11px;color:#888">≤ {{ '{:,.0f}'.format(_reste) }} F</span>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                        <button type="submit" class="btn btn-primary" style="background:#1A7A6D;color:#fff;padding:10px 20px;font-size:13px;font-weight:700">
+                            💰 Procéder au décaissement
+                        </button>
+                        <button type="button" class="btn" style="background:#c53030;color:#fff;padding:10px 16px;font-size:13px;font-weight:700"
+                            onclick="document.getElementById('compta_refus_form').style.display='block';this.style.display='none'">
+                            ❌ Refuser
+                        </button>
+                    </div>
+                </form>
+                <div style="font-size:11px;color:#666;margin-top:6px">Paiement <strong>total</strong> = solde le reste et clôture la sortie. Paiement <strong>partiel</strong> = enregistre un acompte, la sortie reste ouverte jusqu'au solde. L'écriture comptable (658 / 571) est générée à chaque versement.</div>
                 
                 {# Form refus avec motif #}
                 <div id="compta_refus_form" style="display:none;margin-top:14px;padding:12px;background:#fff;border:2px solid #c53030;border-radius:8px">
