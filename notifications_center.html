@@ -4,9 +4,10 @@
 
 <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
     <div>
-        <h1>🔔 Centre de notifications</h1>
+        <h1>🔔 Centre de notifications{% if see_all_notifs %} <span style="font-size:12px;background:#1A7A6D;color:#fff;padding:3px 9px;border-radius:10px;vertical-align:middle">🌐 Vue globale</span>{% endif %}</h1>
         <p style="color:#666;font-size:12px;margin:4px 0 0">
             {{ notif_counts.total }} total · <strong style="color:#c53030">{{ notif_counts.unread }}</strong> non lues · {{ notif_counts.read }} lues
+            {% if see_all_notifs %}<br><span style="color:#1A7A6D">Vous voyez les notifications de <strong>tous les services</strong> (accès comptabilité / recouvrement / commercial / administration).</span>{% endif %}
         </p>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">

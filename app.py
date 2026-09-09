@@ -19076,22 +19076,36 @@ def closure_explanation_respond(exp_id):
     return render_template('closure_explanation.html', page='closure', exp=e_dict)
 
 
+# v174 : rôles ayant accès à TOUTES les notifications (vue globale)
+_NOTIF_ALL_ROLES = ('admin', 'comptable', 'comptabilite', 'recouvrement', 'agent_recouvreur', 'commercial')
+def _can_see_all_notifs(user):
+    try:
+        return bool(user) and (user.get('role') in _NOTIF_ALL_ROLES)
+    except Exception:
+        return False
+
 @app.route('/notifications')
 @login_required
 def notifications_page():
-    """v129 : Centre de notifications enrichi — filtres avancés + recherche + module."""
+    """v129 : Centre de notifications enrichi — filtres avancés + recherche + module.
+    v174 : compta / recouvrement / commercial / admin voient TOUTES les notifications."""
     conn = _gdb()
     user = get_user_by_id(session['user_id'])
     user_email = user.get('email', '') if user else ''
-    
+    see_all = _can_see_all_notifs(user)
+
     filter_state = request.args.get('filter', 'all')  # all | unread | read
     module_filter = (request.args.get('module', '') or '').strip()
     type_filter = (request.args.get('type', '') or '').strip()
     dept_filter = (request.args.get('dept', '') or '').strip()  # v135 : filtre par département
     q = (request.args.get('q', '') or '').strip()
-    
-    where_clauses = ["(user_id=? OR employee_id IN (SELECT id FROM employees WHERE email=?))"]
-    params = [session['user_id'], user_email]
+
+    if see_all:
+        where_clauses = ["1=1"]
+        params = []
+    else:
+        where_clauses = ["(user_id=? OR employee_id IN (SELECT id FROM employees WHERE email=?))"]
+        params = [session['user_id'], user_email]
     
     if filter_state == 'unread':
         where_clauses.append("COALESCE(read,0)=0")
@@ -19113,31 +19127,49 @@ def notifications_page():
         params.extend([like, like])
     
     where_sql = " AND ".join(where_clauses)
-    notifs = [dict(r) for r in conn.execute(
-        f"SELECT * FROM notifications WHERE {where_sql} ORDER BY created_at DESC LIMIT 200",
-        tuple(params)).fetchall()]
+    if see_all:
+        # Vue globale : on regroupe les copies (une par destinataire) d'un même événement
+        list_sql = (f"SELECT *, COUNT(*) as _copies FROM notifications WHERE {where_sql} "
+                    "GROUP BY title, message, COALESCE(link,'') ORDER BY MAX(created_at) DESC LIMIT 300")
+    else:
+        list_sql = f"SELECT * FROM notifications WHERE {where_sql} ORDER BY created_at DESC LIMIT 200"
+    notifs = [dict(r) for r in conn.execute(list_sql, tuple(params)).fetchall()]
     
-    # Compteurs temps réel (sans filtres pour vue globale)
-    counts = conn.execute("""SELECT 
-        COUNT(*) as total,
-        SUM(CASE WHEN COALESCE(read,0)=0 THEN 1 ELSE 0 END) as unread,
-        SUM(CASE WHEN COALESCE(read,0)=1 THEN 1 ELSE 0 END) as read
-        FROM notifications
-        WHERE user_id=? OR employee_id IN (SELECT id FROM employees WHERE email=?)""",
-        (session['user_id'], user_email)).fetchone()
+    # Compteurs temps réel (respectent la vue globale pour les rôles autorisés)
+    if see_all:
+        counts = conn.execute("""SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN COALESCE(read,0)=0 THEN 1 ELSE 0 END) as unread,
+            SUM(CASE WHEN COALESCE(read,0)=1 THEN 1 ELSE 0 END) as read
+            FROM notifications""").fetchone()
+    else:
+        counts = conn.execute("""SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN COALESCE(read,0)=0 THEN 1 ELSE 0 END) as unread,
+            SUM(CASE WHEN COALESCE(read,0)=1 THEN 1 ELSE 0 END) as read
+            FROM notifications
+            WHERE user_id=? OR employee_id IN (SELECT id FROM employees WHERE email=?)""",
+            (session['user_id'], user_email)).fetchone()
     counts = dict(counts) if counts else {'total':0, 'unread':0, 'read':0}
     counts = {k: int(v or 0) for k, v in counts.items()}
     
     # Stats par module (pour affichage des chips)
     module_stats = {}
     try:
-        rows = conn.execute("""SELECT module, COUNT(*) as nb, 
-            SUM(CASE WHEN COALESCE(read,0)=0 THEN 1 ELSE 0 END) as nb_unread
-            FROM notifications
-            WHERE (user_id=? OR employee_id IN (SELECT id FROM employees WHERE email=?))
-            AND module IS NOT NULL AND module != ''
-            GROUP BY module ORDER BY nb DESC""",
-            (session['user_id'], user_email)).fetchall()
+        if see_all:
+            rows = conn.execute("""SELECT module, COUNT(*) as nb,
+                SUM(CASE WHEN COALESCE(read,0)=0 THEN 1 ELSE 0 END) as nb_unread
+                FROM notifications
+                WHERE module IS NOT NULL AND module != ''
+                GROUP BY module ORDER BY nb DESC""").fetchall()
+        else:
+            rows = conn.execute("""SELECT module, COUNT(*) as nb,
+                SUM(CASE WHEN COALESCE(read,0)=0 THEN 1 ELSE 0 END) as nb_unread
+                FROM notifications
+                WHERE (user_id=? OR employee_id IN (SELECT id FROM employees WHERE email=?))
+                AND module IS NOT NULL AND module != ''
+                GROUP BY module ORDER BY nb DESC""",
+                (session['user_id'], user_email)).fetchall()
         module_stats = {r['module']: {'total': r['nb'], 'unread': r['nb_unread'] or 0} for r in rows}
     except: pass
     
@@ -19152,7 +19184,7 @@ def notifications_page():
     return render_template('notifications_center.html', page='notifications',
         notifs=notifs, filter_state=filter_state, notif_counts=counts,
         module_stats=module_stats, module_filter=module_filter, type_filter=type_filter, q=q,
-        dept_filter=dept_filter, departments=departments)
+        dept_filter=dept_filter, departments=departments, see_all_notifs=see_all)
 
 
 # v129 : Page préférences utilisateur — gestion des abonnements multi-canal
@@ -19654,10 +19686,14 @@ def notification_detail(nid):
     if not user: return redirect('/login')
     
     conn = _gdb()
-    
-    # Récupérer la notif courante (sécurité : seulement les notifs du user)
-    notif = conn.execute("""SELECT n.* FROM notifications n 
-        WHERE n.id=? AND n.user_id=?""", (nid, user['id'])).fetchone()
+    see_all = _can_see_all_notifs(user)
+
+    # Récupérer la notif courante (sécurité : notifs du user, ou toutes pour les rôles autorisés)
+    if see_all:
+        notif = conn.execute("SELECT n.* FROM notifications n WHERE n.id=?", (nid,)).fetchone()
+    else:
+        notif = conn.execute("""SELECT n.* FROM notifications n
+            WHERE n.id=? AND n.user_id=?""", (nid, user['id'])).fetchone()
     if not notif:
         conn.close()
         flash("Notification introuvable", "error")
@@ -19674,23 +19710,31 @@ def notification_detail(nid):
     # "Précédente" dans la liste = notif PLUS RÉCENTE → id plus grand
     # "Suivante" dans la liste = notif PLUS ANCIENNE → id plus petit
     # NB : Si une notif n'a pas d'id supérieur/inférieur de l'utilisateur, on retourne None
-    prev_row = conn.execute("""SELECT id FROM notifications 
-        WHERE user_id=? AND id > ? ORDER BY id ASC LIMIT 1""",
-        (user['id'], nid)).fetchone()
-    next_row = conn.execute("""SELECT id FROM notifications 
-        WHERE user_id=? AND id < ? ORDER BY id DESC LIMIT 1""",
-        (user['id'], nid)).fetchone()
-    
+    if see_all:
+        prev_row = conn.execute("SELECT id FROM notifications WHERE id > ? ORDER BY id ASC LIMIT 1", (nid,)).fetchone()
+        next_row = conn.execute("SELECT id FROM notifications WHERE id < ? ORDER BY id DESC LIMIT 1", (nid,)).fetchone()
+    else:
+        prev_row = conn.execute("""SELECT id FROM notifications
+            WHERE user_id=? AND id > ? ORDER BY id ASC LIMIT 1""",
+            (user['id'], nid)).fetchone()
+        next_row = conn.execute("""SELECT id FROM notifications
+            WHERE user_id=? AND id < ? ORDER BY id DESC LIMIT 1""",
+            (user['id'], nid)).fetchone()
+
     prev_id = prev_row['id'] if prev_row else None
     next_id = next_row['id'] if next_row else None
-    
+
     # Comptes
-    unread_count = conn.execute(
-        "SELECT COUNT(*) FROM notifications WHERE user_id=? AND COALESCE(read,0)=0",
-        (user['id'],)).fetchone()[0]
-    total_count = conn.execute(
-        "SELECT COUNT(*) FROM notifications WHERE user_id=?",
-        (user['id'],)).fetchone()[0]
+    if see_all:
+        unread_count = conn.execute("SELECT COUNT(*) FROM notifications WHERE COALESCE(read,0)=0").fetchone()[0]
+        total_count = conn.execute("SELECT COUNT(*) FROM notifications").fetchone()[0]
+    else:
+        unread_count = conn.execute(
+            "SELECT COUNT(*) FROM notifications WHERE user_id=? AND COALESCE(read,0)=0",
+            (user['id'],)).fetchone()[0]
+        total_count = conn.execute(
+            "SELECT COUNT(*) FROM notifications WHERE user_id=?",
+            (user['id'],)).fetchone()[0]
     
     conn.close()
     
